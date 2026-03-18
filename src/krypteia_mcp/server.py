@@ -1,0 +1,232 @@
+"""
+Krypteia MCP Server.
+
+Exposes credential vault tools to Claude Desktop (and Claude Code) via
+the Model Context Protocol. Credentials are encrypted at rest, resolved
+server-side, and never returned to the LLM context.
+
+Usage (Claude Desktop claude_desktop_config.json):
+    {
+        "mcpServers": {
+            "krypteia": {
+                "command": "python",
+                "args": ["-m", "krypteia_mcp.server"]
+            }
+        }
+    }
+"""
+
+from __future__ import annotations
+
+import json
+from mcp.server.fastmcp import FastMCP
+
+from krypteia_mcp.audit import AuditLogger
+from krypteia_mcp.store import EncryptedStore, get_master_key
+from krypteia_mcp.tools.vault_http_request import vault_http_request as _vault_http_request
+from krypteia_mcp.tools.vault_list import vault_list as _vault_list
+from krypteia_mcp.tools.vault_web_login import (
+    vault_web_fetch as _vault_web_fetch,
+    vault_web_login as _vault_web_login,
+    vault_web_logout as _vault_web_logout,
+)
+
+# ---------------------------------------------------------------------------
+# Initialize server, store, and audit logger
+# ---------------------------------------------------------------------------
+
+mcp = FastMCP(
+    "Krypteia",
+    description=(
+        "Credential vault for LLM agents. "
+        "Stores encrypted credentials and uses them on your behalf — "
+        "passwords and API keys never appear in the conversation."
+    ),
+)
+
+# These are initialized lazily on first tool call to avoid startup errors
+# if the keyring isn't configured yet
+_store: EncryptedStore | None = None
+_audit: AuditLogger | None = None
+
+
+def _get_store() -> EncryptedStore:
+    global _store
+    if _store is None:
+        master_key = get_master_key()
+        _store = EncryptedStore(master_key)
+    return _store
+
+
+def _get_audit() -> AuditLogger:
+    global _audit
+    if _audit is None:
+        _audit = AuditLogger()
+    return _audit
+
+
+# ---------------------------------------------------------------------------
+# MCP Tools
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+def krypteia_list() -> str:
+    """
+    List all stored credentials. Returns aliases and metadata only — never
+    passwords, API keys, or tokens.
+
+    Use this to see what credentials are available before making requests.
+    """
+    result = _vault_list(_get_store(), _get_audit())
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+async def krypteia_http_request(
+    alias: str,
+    url: str,
+    method: str = "GET",
+    body: str = "",
+    headers: str = "",
+    params: str = "",
+) -> str:
+    """
+    Make an authenticated HTTP request using a stored credential.
+
+    The credential is resolved server-side and injected into the request.
+    You never see the actual password or API key — only the response.
+
+    Args:
+        alias: The credential alias to use (see krypteia_list).
+        url: The target URL.
+        method: HTTP method (GET, POST, PUT, DELETE, PATCH).
+        body: Optional JSON body as a string (for POST/PUT/PATCH).
+        headers: Optional additional headers as a JSON string.
+        params: Optional query parameters as a JSON string.
+    """
+    body_dict = json.loads(body) if body else None
+    headers_dict = json.loads(headers) if headers else None
+    params_dict = json.loads(params) if params else None
+
+    result = await _vault_http_request(
+        store=_get_store(),
+        audit=_get_audit(),
+        alias=alias,
+        url=url,
+        method=method,
+        body=body_dict,
+        headers=headers_dict,
+        params=params_dict,
+    )
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+async def krypteia_web_login(
+    alias: str,
+    login_url: str,
+    username_field: str = "email",
+    password_field: str = "password",
+    extra_form_data: str = "",
+) -> str:
+    """
+    Log into a website using stored credentials.
+
+    Creates an authenticated session that can be used with krypteia_web_fetch
+    to read content from sites that require login. Your password is never
+    exposed — the server handles login internally.
+
+    Args:
+        alias: The credential alias to use (must be auth_type 'web_login').
+        login_url: The URL where the login form POSTs to.
+        username_field: The form field name for email/username (default: 'email').
+        password_field: The form field name for password (default: 'password').
+        extra_form_data: Optional additional form fields as a JSON string.
+    """
+    extra = json.loads(extra_form_data) if extra_form_data else None
+
+    result = await _vault_web_login(
+        store=_get_store(),
+        audit=_get_audit(),
+        alias=alias,
+        login_url=login_url,
+        username_field=username_field,
+        password_field=password_field,
+        extra_form_data=extra,
+    )
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+async def krypteia_web_fetch(
+    alias: str,
+    url: str,
+    extract_content: bool = True,
+) -> str:
+    """
+    Fetch a page from an authenticated web session and return clean content.
+
+    Must call krypteia_web_login first to establish a session.
+    Returns the page content as clean markdown (or raw HTML if requested).
+
+    Args:
+        alias: The credential alias with an active session.
+        url: The page URL to fetch.
+        extract_content: If True, extract main article content as markdown.
+                        If False, return raw HTML.
+    """
+    result = await _vault_web_fetch(
+        store=_get_store(),
+        audit=_get_audit(),
+        alias=alias,
+        url=url,
+        extract_content=extract_content,
+    )
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+async def krypteia_web_logout(alias: str) -> str:
+    """
+    Close an authenticated web session.
+
+    Args:
+        alias: The credential alias whose session to close.
+    """
+    result = await _vault_web_logout(alias)
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def krypteia_audit(alias: str = "", limit: int = 20) -> str:
+    """
+    View recent audit log entries and verify chain integrity.
+
+    Args:
+        alias: Optional — filter events for a specific credential.
+        limit: Maximum number of events to return (default: 20).
+    """
+    audit = _get_audit()
+    is_valid, count, message = audit.verify_chain()
+    events = audit.get_events(alias=alias if alias else None, limit=limit)
+
+    result = {
+        "chain_integrity": message,
+        "chain_valid": is_valid,
+        "total_events": count,
+        "events": events,
+    }
+    return json.dumps(result, indent=2)
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+def main():
+    """Run the MCP server via stdio transport."""
+    mcp.run(transport="stdio")
+
+
+if __name__ == "__main__":
+    main()

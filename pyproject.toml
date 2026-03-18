@@ -1,0 +1,79 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "krypteia-mcp"
+version = "0.1.0"
+description = "MCP server for credential isolation in LLM agents. Named for Sparta's secret operatives — the root of 'cryptography'."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+    { name = "Anna Hix" },
+]
+keywords = [
+    "mcp",
+    "model-context-protocol",
+    "credentials",
+    "vault",
+    "security",
+    "encryption",
+    "claude",
+    "llm",
+    "ai-agent",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: Security :: Cryptography",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = [
+    "mcp>=1.0.0",
+    "cryptography>=42.0.0",
+    "keyring>=25.0.0",
+    "httpx>=0.27.0",
+    "readability-lxml>=0.8.1",
+    "html2text>=2024.2.26",
+    "click>=8.1.0",
+]
+
+[project.optional-dependencies]
+browser = [
+    "playwright>=1.40.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.3.0",
+]
+
+[project.scripts]
+krypteia = "krypteia_mcp.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/annawhooo/krypteia-mcp"
+Repository = "https://github.com/annawhooo/krypteia-mcp"
+Issues = "https://github.com/annawhooo/krypteia-mcp/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/krypteia_mcp"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
