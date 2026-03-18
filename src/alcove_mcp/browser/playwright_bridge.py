@@ -163,7 +163,20 @@ async def browser_web_fetch(
     page = ctx["page"]
 
     try:
-        await page.goto(url, wait_until="networkidle", timeout=30000)
+        await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        await page.wait_for_timeout(6000)  # let SPA hydrate
+
+        # Dismiss cookie banners if present
+        for sel in ["#onetrust-accept-btn-handler", "button:has-text('Accept All')", "button:has-text('Essential only')"]:
+            try:
+                btn = await page.query_selector(sel)
+                if btn:
+                    await btn.click()
+                    await page.wait_for_timeout(1000)
+                    break
+            except Exception:
+                pass
+
         page_title = await page.title()
         raw_html = await page.content()
     except Exception as e:
@@ -173,6 +186,12 @@ async def browser_web_fetch(
     # Extract content
     if extract_content:
         try:
+            # For SPA sites, Playwright's rendered inner_text is more reliable
+            # than readability, which often grabs cookie banners or nav chrome
+            # instead of the actual dynamically-rendered page content.
+            rendered_text = await page.inner_text("body")
+
+            # Also try readability for comparison
             from readability import Document
             import html2text
 
@@ -184,7 +203,14 @@ async def browser_web_fetch(
             converter.ignore_links = False
             converter.ignore_images = True
             converter.body_width = 0
-            markdown_content = converter.handle(content_html)
+            readability_content = converter.handle(content_html)
+
+            # Prefer rendered text if it's substantially richer than readability
+            if len(rendered_text.strip()) > len(readability_content.strip()) * 1.5:
+                markdown_content = rendered_text
+                title = page_title
+            else:
+                markdown_content = readability_content
         except Exception:
             title = page_title
             markdown_content = raw_html
