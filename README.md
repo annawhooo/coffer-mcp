@@ -2,8 +2,6 @@
 
 **Credential vault for LLM agents.** Your AI assistant uses passwords and API keys — but never sees them.
 
-Named for Sparta's secret operatives (Κρυπτεία) — the Greek root of *cryptography*.
-
 ---
 
 ## The Problem
