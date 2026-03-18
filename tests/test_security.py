@@ -2,8 +2,8 @@
 
 import pytest
 
-from krypteia_mcp.security import check_method_allowed, check_url_allowed, sanitize_response
-from krypteia_mcp.store.encrypted_store import CredentialEntry
+from alcove_mcp.security import check_method_allowed, check_url_allowed, sanitize_response
+from alcove_mcp.store.encrypted_store import CredentialEntry
 
 
 @pytest.fixture

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from krypteia_mcp.store.encrypted_store import CredentialEntry, EncryptedStore
+from alcove_mcp.store.encrypted_store import CredentialEntry, EncryptedStore
 
 
 @pytest.fixture

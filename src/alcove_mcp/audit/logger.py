@@ -34,11 +34,11 @@ class AuditLogger:
     Append-only JSONL audit logger with hash chain integrity.
 
     File layout:
-        ~/.krypteia/audit.jsonl
+        ~/.alcove/audit.jsonl
     """
 
     def __init__(self, log_path: Path | None = None):
-        self._path = log_path or Path.home() / ".krypteia" / "audit.jsonl"
+        self._path = log_path or Path.home() / ".alcove" / "audit.jsonl"
         self._path.parent.mkdir(parents=True, exist_ok=True)
         if not self._path.exists():
             self._path.touch()

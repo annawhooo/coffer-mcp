@@ -3,8 +3,8 @@ Master key management.
 
 Retrieves or generates the master encryption key using (in priority order):
 1. OS keyring (Windows Credential Manager / macOS Keychain / Linux Secret Service)
-2. KRYPTEIA_MASTER_KEY environment variable
-3. Auto-generated key stored in ~/.krypteia/.master-key (fallback)
+2. ALCOVE_MASTER_KEY environment variable
+3. Auto-generated key stored in ~/.alcove/.master-key (fallback)
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from pathlib import Path
 
 import keyring
 
-SERVICE_NAME = "krypteia-mcp"
+SERVICE_NAME = "alcove-mcp"
 KEY_ACCOUNT = "master-key"
 
 
@@ -26,8 +26,8 @@ def get_master_key() -> bytes:
 
     Priority:
         1. OS keyring
-        2. KRYPTEIA_MASTER_KEY env var (hex-encoded)
-        3. Auto-generated file at ~/.krypteia/.master-key
+        2. ALCOVE_MASTER_KEY env var (hex-encoded)
+        3. Auto-generated file at ~/.alcove/.master-key
 
     Returns:
         32-byte AES-256 key.
@@ -38,7 +38,7 @@ def get_master_key() -> bytes:
         return stored
 
     # 2. Try environment variable
-    env_key = os.environ.get("KRYPTEIA_MASTER_KEY")
+    env_key = os.environ.get("ALCOVE_MASTER_KEY")
     if env_key:
         return _derive_key_from_passphrase(env_key)
 
@@ -101,10 +101,10 @@ def _get_or_create_file_key() -> bytes:
     """
     Get or create an auto-generated master key stored on disk.
 
-    This is the least secure option — used only as a last resort.
+    This is the least secure option â€” used only as a last resort.
     The file is created with restrictive permissions.
     """
-    key_path = Path.home() / ".krypteia" / ".master-key"
+    key_path = Path.home() / ".alcove" / ".master-key"
     key_path.parent.mkdir(parents=True, exist_ok=True)
 
     if key_path.exists():

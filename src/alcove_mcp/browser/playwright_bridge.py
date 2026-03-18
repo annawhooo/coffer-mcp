@@ -1,11 +1,11 @@
 """
-Playwright browser bridge for Krypteia.
+Playwright browser bridge for Alcove.
 
 Handles form-based web login and content extraction using a real browser.
 This is necessary for sites that use JavaScript-heavy login flows
 (Salesforce Community Cloud, SPAs, etc.) where simple HTTP POST won't work.
 
-The credential is resolved inside Krypteia, injected into the browser form,
+The credential is resolved inside Alcove, injected into the browser form,
 and the browser is controlled entirely server-side. Claude never sees the
 password — only the resulting page content.
 """
@@ -15,9 +15,9 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from krypteia_mcp.audit import AuditLogger
-from krypteia_mcp.security import sanitize_response
-from krypteia_mcp.store import EncryptedStore
+from alcove_mcp.audit import AuditLogger
+from alcove_mcp.security import sanitize_response
+from alcove_mcp.store import EncryptedStore
 
 
 # Module-level browser context cache (keyed by alias)
@@ -157,7 +157,7 @@ async def browser_web_fetch(
         audit.log("browser_fetch.failed", alias, "failure", {"reason": "no_session"})
         return {
             "status": "error",
-            "message": f"No active browser session for '{alias}'. Call krypteia_web_login first.",
+            "message": f"No active browser session for '{alias}'. Call alcove_web_login first.",
         }
 
     page = ctx["page"]
