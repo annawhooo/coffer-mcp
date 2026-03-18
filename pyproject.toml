@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "alcove-mcp"
 version = "0.1.0"
-description = "MCP server for credential isolation in LLM agents. Your credentials stay in the alcove — the sheltered space only you can reach."
+description = "The sheltered space where your secrets live. MCP credential vault for LLM agents."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
