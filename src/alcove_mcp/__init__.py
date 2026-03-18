@@ -1,8 +1,8 @@
 """
-Alcove MCP — credential vault for LLM agents.
+Alcove MCP — The sheltered space where your secrets live.
 
-Named for Sparta's secret operatives (Κρυπτεία) — the root of 'cryptography'.
-Your AI assistant uses passwords and API keys, but never sees them.
+Credential vault for LLM agents. Your AI assistant uses
+passwords and API keys, but never sees them.
 """
 
 __version__ = "0.1.0"

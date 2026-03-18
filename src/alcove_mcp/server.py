@@ -38,7 +38,7 @@ from alcove_mcp.browser.playwright_bridge import (
 mcp = FastMCP(
     "Alcove",
     instructions=(
-        "Credential vault for LLM agents. "
+        "Alcove — the sheltered space where your secrets live. "
         "Stores encrypted credentials and uses them on your behalf — "
         "passwords and API keys never appear in the conversation."
     ),
