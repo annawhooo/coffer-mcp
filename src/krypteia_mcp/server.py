@@ -37,7 +37,7 @@ from krypteia_mcp.tools.vault_web_login import (
 
 mcp = FastMCP(
     "Krypteia",
-    description=(
+    instructions=(
         "Credential vault for LLM agents. "
         "Stores encrypted credentials and uses them on your behalf — "
         "passwords and API keys never appear in the conversation."
