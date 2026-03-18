@@ -25,10 +25,10 @@ from krypteia_mcp.audit import AuditLogger
 from krypteia_mcp.store import EncryptedStore, get_master_key
 from krypteia_mcp.tools.vault_http_request import vault_http_request as _vault_http_request
 from krypteia_mcp.tools.vault_list import vault_list as _vault_list
-from krypteia_mcp.tools.vault_web_login import (
-    vault_web_fetch as _vault_web_fetch,
-    vault_web_login as _vault_web_login,
-    vault_web_logout as _vault_web_logout,
+from krypteia_mcp.browser.playwright_bridge import (
+    browser_web_fetch as _browser_web_fetch,
+    browser_web_login as _browser_web_login,
+    browser_web_logout as _browser_web_logout,
 )
 
 # ---------------------------------------------------------------------------
@@ -125,34 +125,37 @@ async def krypteia_http_request(
 async def krypteia_web_login(
     alias: str,
     login_url: str,
-    username_field: str = "email",
-    password_field: str = "password",
-    extra_form_data: str = "",
+    username_selector: str = 'input[name="username"], input[type="email"], input#username',
+    password_selector: str = 'input[name="password"], input[type="password"], input#password',
+    submit_selector: str = 'button[type="submit"], input[type="submit"], button:has-text("Log In")',
+    wait_after_login: int = 5000,
 ) -> str:
     """
-    Log into a website using stored credentials.
+    Log into a website using stored credentials via a real browser.
 
-    Creates an authenticated session that can be used with krypteia_web_fetch
-    to read content from sites that require login. Your password is never
-    exposed — the server handles login internally.
+    Uses Playwright to automate a headless Chromium browser. The credential
+    is resolved from the vault, filled into the login form, and submitted.
+    Your password never appears in the conversation.
+
+    After login, use krypteia_web_fetch to read pages from the authenticated session.
 
     Args:
         alias: The credential alias to use (must be auth_type 'web_login').
-        login_url: The URL where the login form POSTs to.
-        username_field: The form field name for email/username (default: 'email').
-        password_field: The form field name for password (default: 'password').
-        extra_form_data: Optional additional form fields as a JSON string.
+        login_url: The login page URL (not the POST endpoint — the actual page with the form).
+        username_selector: CSS selector for the username/email input field.
+        password_selector: CSS selector for the password input field.
+        submit_selector: CSS selector for the submit/login button.
+        wait_after_login: Milliseconds to wait after clicking submit (default: 5000).
     """
-    extra = json.loads(extra_form_data) if extra_form_data else None
-
-    result = await _vault_web_login(
+    result = await _browser_web_login(
         store=_get_store(),
         audit=_get_audit(),
         alias=alias,
         login_url=login_url,
-        username_field=username_field,
-        password_field=password_field,
-        extra_form_data=extra,
+        username_selector=username_selector,
+        password_selector=password_selector,
+        submit_selector=submit_selector,
+        wait_after_login=wait_after_login,
     )
     return json.dumps(result, indent=2)
 
@@ -175,7 +178,7 @@ async def krypteia_web_fetch(
         extract_content: If True, extract main article content as markdown.
                         If False, return raw HTML.
     """
-    result = await _vault_web_fetch(
+    result = await _browser_web_fetch(
         store=_get_store(),
         audit=_get_audit(),
         alias=alias,
@@ -193,7 +196,7 @@ async def krypteia_web_logout(alias: str) -> str:
     Args:
         alias: The credential alias whose session to close.
     """
-    result = await _vault_web_logout(alias)
+    result = await _browser_web_logout(alias)
     return json.dumps(result, indent=2)
 
 
