@@ -1,6 +1,6 @@
-# Alcove MCP
+# Coffer MCP
 
-*The sheltered space where your secrets live.*
+*The strongbox between your secrets and your AI.*
 
 **Credential vault for LLM agents.** Your AI assistant uses passwords and API keys — but never sees them.
 
@@ -12,7 +12,7 @@ When you give Claude a password or API key, it lives in the conversation context
 
 ## The Solution
 
-Alcove stores your credentials **encrypted on your machine** and exposes MCP tools that let Claude make authenticated requests **without ever seeing the actual credential**. The password goes from your vault to the target server. Claude only sees the result.
+Coffer stores your credentials **encrypted on your machine** and exposes MCP tools that let Claude make authenticated requests **without ever seeing the actual credential**. The password goes from your vault to the target server. Claude only sees the result.
 
 ```
 You (one-time setup)
@@ -20,11 +20,11 @@ You (one-time setup)
   ▼
 Alcove MCP Server (runs locally)
   ├── Encrypted vault (AES-256-GCM)
-  ├── alcove_list        → returns aliases only
-  ├── alcove_http_request → injects auth, returns clean response
-  ├── alcove_web_login    → logs into websites, caches session
-  ├── alcove_web_fetch    → fetches pages as markdown
-  └── alcove_audit        → tamper-proof activity log
+  ├── coffer_list        → returns aliases only
+  ├── coffer_http_request → injects auth, returns clean response
+  ├── coffer_web_login    → logs into websites, caches session
+  ├── coffer_web_fetch    → fetches pages as markdown
+  └── coffer_audit        → tamper-proof activity log
 
 Claude sees: { "status": "ok", "body": "..." }
 Claude never sees: your password
@@ -35,20 +35,20 @@ Claude never sees: your password
 ### 1. Install
 
 ```bash
-pip install alcove-mcp
+pip install coffer-mcp
 ```
 
 ### 2. Set up your master key
 
 ```bash
-alcove init
+coffer init
 # Enter a master passphrase — this encrypts all your credentials
 ```
 
 ### 3. Add a credential
 
 ```bash
-alcove add
+coffer add
 # Follow the prompts: alias, auth type, username, password, allowed URLs
 ```
 
@@ -64,7 +64,7 @@ Add to your `claude_desktop_config.json`:
     "mcpServers": {
         "Alcove": {
             "command": "python",
-            "args": ["-m", "alcove_mcp.server"]
+            "args": ["-m", "coffer_mcp.server"]
         }
     }
 }
@@ -73,35 +73,35 @@ Add to your `claude_desktop_config.json`:
 ### 5. Use in Claude
 
 > "What credentials do I have stored?"
-> → Claude calls `alcove_list` → sees aliases only
+> → Claude calls `coffer_list` → sees aliases only
 
 > "Fetch the latest article from my blog"
-> → Claude calls `alcove_web_login` then `alcove_web_fetch`
+> → Claude calls `coffer_web_login` then `coffer_web_fetch`
 > → You get the article content, Claude never sees your password
 
 ## MCP Tools
 
 | Tool | What it does | What Claude sees |
 |---|---|---|
-| `alcove_list` | List stored credentials | Aliases, types, descriptions |
-| `alcove_http_request` | Authenticated API call | Response body (sanitized) |
-| `alcove_web_login` | Log into a website | `{ status: "ok" }` |
-| `alcove_web_fetch` | Fetch page content | Clean markdown |
-| `alcove_web_logout` | Close web session | `{ status: "ok" }` |
-| `alcove_audit` | View activity log | Events + chain integrity |
+| `coffer_list` | List stored credentials | Aliases, types, descriptions |
+| `coffer_http_request` | Authenticated API call | Response body (sanitized) |
+| `coffer_web_login` | Log into a website | `{ status: "ok" }` |
+| `coffer_web_fetch` | Fetch page content | Clean markdown |
+| `coffer_web_logout` | Close web session | `{ status: "ok" }` |
+| `coffer_audit` | View activity log | Events + chain integrity |
 
 **What Claude never sees:** passwords, API keys, tokens, session cookies.
 
 ## CLI Commands
 
 ```bash
-alcove init              # Set up master key in OS keyring
-alcove add               # Add a credential (interactive)
-alcove list              # List credentials (no secrets)
-alcove remove <alias>    # Remove a credential
-alcove audit             # View audit log + verify integrity
-alcove clear-key         # Remove master key from OS keyring
-alcove serve             # Start MCP server (for debugging)
+coffer init              # Set up master key in OS keyring
+coffer add               # Add a credential (interactive)
+coffer list              # List credentials (no secrets)
+coffer remove <alias>    # Remove a credential
+coffer audit             # View audit log + verify integrity
+coffer clear-key         # Remove master key from OS keyring
+coffer serve             # Start MCP server (for debugging)
 ```
 
 ## Security
@@ -127,7 +127,7 @@ See [SECURITY.md](SECURITY.md) for the full threat model.
 ## File Layout
 
 ```
-~/.alcove/
+~/.coffer/
 ├── credentials.json    # Encrypted credentials (AES-256-GCM)
 ├── audit.jsonl         # Append-only audit log with hash chain
 └── .master-key         # Auto-generated master key (fallback only)
