@@ -73,7 +73,7 @@ Add to your `claude_desktop_config.json`:
 > "What credentials do I have stored?"
 > → Claude calls `alcove_list` → sees aliases only
 
-> "Fetch the latest article from my OneTrust blog"
+> "Fetch the latest article from my blog"
 > → Claude calls `alcove_web_login` then `alcove_web_fetch`
 > → You get the article content, Claude never sees your password
 
