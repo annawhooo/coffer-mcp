@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from krypteia_mcp.audit import AuditLogger
-from krypteia_mcp.store import EncryptedStore
+from alcove_mcp.audit import AuditLogger
+from alcove_mcp.store import EncryptedStore
 
 
 def vault_list(store: EncryptedStore, audit: AuditLogger) -> list[dict[str, Any]]:

@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "krypteia-mcp"
+name = "alcove-mcp"
 version = "0.1.0"
-description = "MCP server for credential isolation in LLM agents. Named for Sparta's secret operatives — the root of 'cryptography'."
+description = "MCP server for credential isolation in LLM agents. Your credentials stay in the alcove — the sheltered space only you can reach."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
@@ -57,15 +57,15 @@ dev = [
 ]
 
 [project.scripts]
-krypteia = "krypteia_mcp.cli:main"
+alcove = "alcove_mcp.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/annawhooo/krypteia-mcp"
-Repository = "https://github.com/annawhooo/krypteia-mcp"
-Issues = "https://github.com/annawhooo/krypteia-mcp/issues"
+Homepage = "https://github.com/annawhooo/alcove-mcp"
+Repository = "https://github.com/annawhooo/alcove-mcp"
+Issues = "https://github.com/annawhooo/alcove-mcp/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/krypteia_mcp"]
+packages = ["src/alcove_mcp"]
 
 [tool.ruff]
 target-version = "py310"

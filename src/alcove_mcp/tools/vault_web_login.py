@@ -20,9 +20,9 @@ import httpx
 from readability import Document
 import html2text
 
-from krypteia_mcp.audit import AuditLogger
-from krypteia_mcp.security import sanitize_response
-from krypteia_mcp.store import EncryptedStore
+from alcove_mcp.audit import AuditLogger
+from alcove_mcp.security import sanitize_response
+from alcove_mcp.store import EncryptedStore
 
 
 # Module-level session cache (keyed by alias)

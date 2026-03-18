@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from krypteia_mcp.audit.logger import AuditLogger
+from alcove_mcp.audit.logger import AuditLogger
 
 
 @pytest.fixture

@@ -12,9 +12,9 @@ from typing import Any
 
 import httpx
 
-from krypteia_mcp.audit import AuditLogger
-from krypteia_mcp.security import check_method_allowed, check_url_allowed, sanitize_response
-from krypteia_mcp.store import EncryptedStore
+from alcove_mcp.audit import AuditLogger
+from alcove_mcp.security import check_method_allowed, check_url_allowed, sanitize_response
+from alcove_mcp.store import EncryptedStore
 
 
 async def vault_http_request(

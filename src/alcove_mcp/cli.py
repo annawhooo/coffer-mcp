@@ -1,13 +1,13 @@
 """
-Krypteia CLI — manage credentials from the command line.
+Alcove CLI — manage credentials from the command line.
 
 Usage:
-    krypteia add           Add a new credential (interactive)
-    krypteia list          List all stored credentials
-    krypteia remove ALIAS  Remove a credential
-    krypteia audit         View audit log and verify integrity
-    krypteia init          Set up the master key in the OS keyring
-    krypteia serve         Start the MCP server (for debugging)
+    alcove add           Add a new credential (interactive)
+    alcove list          List all stored credentials
+    alcove remove ALIAS  Remove a credential
+    alcove audit         View audit log and verify integrity
+    alcove init          Set up the master key in the OS keyring
+    alcove serve         Start the MCP server (for debugging)
 """
 
 from __future__ import annotations
@@ -18,8 +18,8 @@ import sys
 
 import click
 
-from krypteia_mcp.audit import AuditLogger
-from krypteia_mcp.store import (
+from alcove_mcp.audit import AuditLogger
+from alcove_mcp.store import (
     CredentialEntry,
     EncryptedStore,
     clear_keyring,
@@ -38,14 +38,14 @@ def _get_audit() -> AuditLogger:
 
 @click.group()
 def main():
-    """Krypteia — credential vault for LLM agents."""
+    """Alcove — credential vault for LLM agents."""
     pass
 
 
 @main.command()
 def init():
     """Set up the master key in the OS keyring."""
-    click.echo("Setting up Krypteia master key.")
+    click.echo("Setting up Alcove master key.")
     click.echo("This passphrase encrypts all your stored credentials.")
     click.echo()
 
@@ -62,7 +62,7 @@ def init():
 
     key = store_master_key_in_keyring(passphrase)
     click.echo(f"Master key stored in OS keyring (key fingerprint: {key[:4].hex()}...)")
-    click.echo("You can now add credentials with: krypteia add")
+    click.echo("You can now add credentials with: alcove add")
 
 
 @main.command()
@@ -124,7 +124,7 @@ def list_creds():
     aliases = store.list_aliases()
 
     if not aliases:
-        click.echo("No credentials stored. Add one with: krypteia add")
+        click.echo("No credentials stored. Add one with: alcove add")
         return
 
     click.echo(f"\n{'Alias':<25} {'Type':<18} {'Description'}")
@@ -177,8 +177,8 @@ def audit(alias, limit):
 @main.command()
 def serve():
     """Start the MCP server (for debugging)."""
-    click.echo("Starting Krypteia MCP server...")
-    from krypteia_mcp.server import main as server_main
+    click.echo("Starting Alcove MCP server...")
+    from alcove_mcp.server import main as server_main
     server_main()
 
 

@@ -71,7 +71,7 @@ class EncryptedStore:
     Manages encrypted credentials on disk.
 
     File layout:
-        ~/.krypteia/credentials.json — list of EncryptedBlob dicts
+        ~/.alcove/credentials.json — list of EncryptedBlob dicts
     """
 
     def __init__(self, master_key: bytes, store_path: Path | None = None):
@@ -83,7 +83,7 @@ class EncryptedStore:
         if len(master_key) != 32:
             raise ValueError("Master key must be exactly 32 bytes (256 bits)")
         self._gcm = AESGCM(master_key)
-        self._path = store_path or Path.home() / ".krypteia" / "credentials.json"
+        self._path = store_path or Path.home() / ".alcove" / "credentials.json"
         self._path.parent.mkdir(parents=True, exist_ok=True)
         if not self._path.exists():
             self._write_blobs([])

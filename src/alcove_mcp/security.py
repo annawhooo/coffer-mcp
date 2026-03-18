@@ -8,7 +8,7 @@ import fnmatch
 import re
 from urllib.parse import urlparse
 
-from krypteia_mcp.store.encrypted_store import CredentialEntry
+from alcove_mcp.store.encrypted_store import CredentialEntry
 
 
 def check_url_allowed(entry: CredentialEntry, url: str) -> bool:

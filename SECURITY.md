@@ -2,10 +2,10 @@
 
 ## Threat Model
 
-Krypteia is designed to prevent **credential exposure in LLM conversation context**.
+Alcove is designed to prevent **credential exposure in LLM conversation context**.
 It is NOT a general-purpose secrets manager.
 
-### What Krypteia Protects Against
+### What Alcove Protects Against
 
 | Threat | Protection |
 |---|---|
@@ -14,14 +14,14 @@ It is NOT a general-purpose secrets manager.
 | Prompt injection credential theft | URL allowlisting prevents credentials from being sent to attacker-controlled endpoints |
 | Accidental exposure in logs | Response sanitization scrubs leaked credentials |
 | Audit log tampering | SHA-256 hash chain detects modifications |
-| Credential enumeration | `krypteia_list` returns aliases only, never secrets |
+| Credential enumeration | `alcove_list` returns aliases only, never secrets |
 
-### What Krypteia Does NOT Protect Against
+### What Alcove Does NOT Protect Against
 
 | Threat | Why |
 |---|---|
 | Compromised host (root/admin access) | If the machine is compromised, the attacker can read memory |
-| User typing password into chat | Krypteia can't prevent what you type directly |
+| User typing password into chat | Alcove can't prevent what you type directly |
 | Malicious MCP client | A client that ignores tool output boundaries could theoretically access raw IPC |
 | Browser-level memory attacks | If using Playwright, credentials exist briefly in browser process memory |
 | Master key compromise | If the OS keyring or master key file is compromised, all credentials are exposed |
@@ -49,7 +49,7 @@ If `allowed_urls` is empty, the credential **cannot be used for any request**
 
 ## Audit Chain
 
-Every credential operation is logged in `~/.krypteia/audit.jsonl` with:
+Every credential operation is logged in `~/.alcove/audit.jsonl` with:
 - Timestamp
 - Event type
 - Credential alias (never the secret)
@@ -57,7 +57,7 @@ Every credential operation is logged in `~/.krypteia/audit.jsonl` with:
 - Context details
 
 Each entry includes a SHA-256 hash incorporating the previous entry's hash,
-creating a tamper-evident chain. Use `krypteia audit` to verify integrity.
+creating a tamper-evident chain. Use `alcove audit` to verify integrity.
 
 ## Reporting Vulnerabilities
 
