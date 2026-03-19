@@ -1,5 +1,7 @@
 # Coffer MCP
 
+*The strongbox between your secrets and your AI.*
+
 **Credential vault for LLM agents.** Your AI assistant uses passwords and API keys — but never sees them.
 
 ---
