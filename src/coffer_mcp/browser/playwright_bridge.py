@@ -1,11 +1,11 @@
 """
-Playwright browser bridge for Alcove.
+Playwright browser bridge for Coffer.
 
 Handles form-based web login and content extraction using a real browser.
 This is necessary for sites that use JavaScript-heavy login flows
 (Salesforce Community Cloud, SPAs, etc.) where simple HTTP POST won't work.
 
-The credential is resolved inside Alcove, injected into the browser form,
+The credential is resolved inside Coffer, injected into the browser form,
 and the browser is controlled entirely server-side. Claude never sees the
 password — only the resulting page content.
 """
@@ -13,15 +13,19 @@ password — only the resulting page content.
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any
 
-from alcove_mcp.audit import AuditLogger
-from alcove_mcp.security import sanitize_response
-from alcove_mcp.store import EncryptedStore
+from coffer_mcp.audit import AuditLogger
+from coffer_mcp.security import sanitize_response, sanitize_content, check_url_allowed
+from coffer_mcp.store import EncryptedStore
 
 
 # Module-level browser context cache (keyed by alias)
 _contexts: dict[str, dict[str, Any]] = {}
+
+# Session timeout in seconds (30 minutes)
+SESSION_TIMEOUT = 30 * 60
 
 
 async def _ensure_browser():
@@ -105,8 +109,12 @@ async def browser_web_login(
 
         page_title = await page.title()
 
-        # 6. Cache the authenticated context
-        _contexts[alias] = {"context": context, "page": page}
+        # 6. Cache the authenticated context with expiry timestamp
+        _contexts[alias] = {
+            "context": context,
+            "page": page,
+            "created_at": time.time(),
+        }
 
         audit.log(
             "browser_login.success",
@@ -157,10 +165,40 @@ async def browser_web_fetch(
         audit.log("browser_fetch.failed", alias, "failure", {"reason": "no_session"})
         return {
             "status": "error",
-            "message": f"No active browser session for '{alias}'. Call alcove_web_login first.",
+            "message": f"No active browser session for '{alias}'. Call coffer_web_login first.",
+        }
+
+    # Check session expiry
+    session_age = time.time() - ctx.get("created_at", 0)
+    if session_age > SESSION_TIMEOUT:
+        await browser_web_logout(alias)
+        audit.log("browser_fetch.failed", alias, "failure", {
+            "reason": "session_expired",
+            "age_seconds": int(session_age),
+        })
+        return {
+            "status": "error",
+            "message": (
+                f"Browser session for '{alias}' expired after "
+                f"{int(session_age // 60)} minutes. Call coffer_web_login to re-authenticate."
+            ),
         }
 
     page = ctx["page"]
+
+    # Enforce URL allowlist on the fetch target
+    try:
+        entry = store.get(alias)
+        if not check_url_allowed(entry, url):
+            audit.log("browser_fetch.failed", alias, "failure", {
+                "reason": "url_not_allowed", "url": url,
+            })
+            return {
+                "status": "error",
+                "message": f"URL '{url}' is not in the allowlist for credential '{alias}'",
+            }
+    except KeyError:
+        pass  # Credential deleted mid-session; proceed cautiously
 
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=30000)
@@ -225,6 +263,7 @@ async def browser_web_fetch(
         markdown_content = sanitize_response(markdown_content, entry)
     except KeyError:
         pass
+    markdown_content = sanitize_content(markdown_content)
 
     audit.log(
         "browser_fetch.success",

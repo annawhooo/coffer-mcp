@@ -1,4 +1,4 @@
-# Contributing to Alcove MCP
+# Contributing to Coffer MCP
 
 Thanks for your interest in contributing! Here's how to get started.
 
@@ -6,8 +6,8 @@ Thanks for your interest in contributing! Here's how to get started.
 
 ```bash
 # Clone the repo
-git clone https://github.com/annawhooo/alcove-mcp.git
-cd alcove-mcp
+git clone https://github.com/annawhooo/coffer-mcp.git
+cd coffer-mcp
 
 # Create a virtual environment
 python -m venv .venv
@@ -37,7 +37,7 @@ ruff format src/ tests/
 
 **CRITICAL:** Never commit credentials, master keys, or vault data.
 
-- The `.gitignore` already excludes `~/.alcove/` and related files
+- The `.gitignore` already excludes `~/.coffer/` and related files
 - Never log credential values in audit events — log aliases only
 - Never return credential values in MCP tool responses
 - Always sanitize HTTP responses before returning to the LLM
@@ -54,11 +54,11 @@ ruff format src/ tests/
 
 ## Adding a New MCP Tool
 
-1. Create a new file in `src/alcove_mcp/tools/`
+1. Create a new file in `src/coffer_mcp/tools/`
 2. The tool function should accept `store` and `audit` as first args
 3. Always audit every credential access (success and failure)
 4. Never return `entry.secret` or `entry.username` in the response
-5. Register the tool in `src/alcove_mcp/server.py`
+5. Register the tool in `src/coffer_mcp/server.py`
 6. Add tests in `tests/`
 
 ## Reporting Issues

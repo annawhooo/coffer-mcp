@@ -1,6 +1,6 @@
 # Coffer MCP
 
-*The strongbox between your secrets and your AI.*
+
 
 **Credential vault for LLM agents.** Your AI assistant uses passwords and API keys — but never sees them.
 
@@ -18,7 +18,7 @@ Coffer stores your credentials **encrypted on your machine** and exposes MCP too
 You (one-time setup)
   │
   ▼
-Alcove MCP Server (runs locally)
+Coffer MCP Server (runs locally)
   ├── Encrypted vault (AES-256-GCM)
   ├── coffer_list        → returns aliases only
   ├── coffer_http_request → injects auth, returns clean response
@@ -62,7 +62,7 @@ Add to your `claude_desktop_config.json`:
 ```json
 {
     "mcpServers": {
-        "Alcove": {
+        "Coffer": {
             "command": "python",
             "args": ["-m", "coffer_mcp.server"]
         }

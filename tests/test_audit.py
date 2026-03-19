@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from alcove_mcp.audit.logger import AuditLogger
+from coffer_mcp.audit.logger import AuditLogger
 
 
 @pytest.fixture

@@ -12,9 +12,9 @@ from typing import Any
 
 import httpx
 
-from alcove_mcp.audit import AuditLogger
-from alcove_mcp.security import check_method_allowed, check_url_allowed, sanitize_response
-from alcove_mcp.store import EncryptedStore
+from coffer_mcp.audit import AuditLogger
+from coffer_mcp.security import check_method_allowed, check_url_allowed, sanitize_response, sanitize_content
+from coffer_mcp.store import EncryptedStore
 
 
 async def vault_http_request(
@@ -96,20 +96,70 @@ async def vault_http_request(
         else:
             request_headers["X-API-Key"] = entry.secret
 
-    # 5. Make the request
+    # 5. Make the request (redirects checked per-hop against allowlist)
+    MAX_REDIRECTS = 10
+    current_url = url
     try:
-        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-            response = await client.request(
-                method=method.upper(),
-                url=url,
-                headers=request_headers,
-                json=body if body and method.upper() in ("POST", "PUT", "PATCH") else None,
-                params=params,
-            )
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
+            for redirect_hop in range(MAX_REDIRECTS + 1):
+                response = await client.request(
+                    method=method.upper(),
+                    url=current_url,
+                    headers=request_headers,
+                    json=body if body and method.upper() in ("POST", "PUT", "PATCH") else None,
+                    params=params if redirect_hop == 0 else None,
+                )
+
+                # If not a redirect, we're done
+                if response.status_code not in (301, 302, 303, 307, 308):
+                    break
+
+                # It's a redirect — check the new location against the allowlist
+                location = response.headers.get("location")
+                if not location:
+                    break
+
+                # Resolve relative redirects
+                from urllib.parse import urljoin
+                next_url = urljoin(current_url, location)
+
+                if not check_url_allowed(entry, next_url):
+                    audit.log(
+                        "credential.access_denied",
+                        alias,
+                        "failure",
+                        {
+                            "reason": "redirect_url_not_allowed",
+                            "original_url": url,
+                            "redirect_url": next_url,
+                            "hop": redirect_hop + 1,
+                        },
+                    )
+                    return {
+                        "status": "error",
+                        "message": (
+                            f"Redirect from '{current_url}' to '{next_url}' "
+                            f"is outside the allowlist for credential '{alias}'. "
+                            f"Blocked at hop {redirect_hop + 1}."
+                        ),
+                    }
+
+                current_url = next_url
+                # On 303, method changes to GET per HTTP spec
+                if response.status_code == 303:
+                    method = "GET"
+                    body = None
+            else:
+                # Exceeded max redirects
+                return {
+                    "status": "error",
+                    "message": f"Too many redirects ({MAX_REDIRECTS}) for '{url}'",
+                }
 
         # 6. Sanitize the response
         response_text = response.text
         clean_text = sanitize_response(response_text, entry)
+        clean_text = sanitize_content(clean_text)
 
         # 7. Audit success
         audit.log(
@@ -131,13 +181,25 @@ async def vault_http_request(
         }
 
     except httpx.HTTPError as e:
+        # Sanitize the error message to prevent credential leakage
+        # via exception strings (some httpx errors include full URLs
+        # with query params, headers, or auth tokens in repr).
+        error_msg = str(e)
+        error_msg = sanitize_response(error_msg, entry)
+        # Further strip anything that looks like a token or key
+        import re as _re
+        error_msg = _re.sub(
+            r"(Bearer |Basic |Token |Authorization: )\S+",
+            r"\1[REDACTED]",
+            error_msg,
+        )
         audit.log(
             "credential.used",
             alias,
             "failure",
-            {"url": url, "method": method.upper(), "error": str(e)},
+            {"url": url, "method": method.upper(), "error": error_msg},
         )
         return {
             "status": "error",
-            "message": f"HTTP request failed: {str(e)}",
+            "message": f"HTTP request failed: {error_msg}",
         }

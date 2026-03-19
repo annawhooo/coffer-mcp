@@ -34,11 +34,12 @@ class AuditLogger:
     Append-only JSONL audit logger with hash chain integrity.
 
     File layout:
-        ~/.alcove/audit.jsonl
+        ~/.coffer/audit.jsonl
     """
 
-    def __init__(self, log_path: Path | None = None):
-        self._path = log_path or Path.home() / ".alcove" / "audit.jsonl"
+    def __init__(self, log_path: Path | None = None, hmac_key: bytes | None = None):
+        self._path = log_path or Path.home() / ".coffer" / "audit.jsonl"
+        self._hmac_key = hmac_key
         self._path.parent.mkdir(parents=True, exist_ok=True)
         if not self._path.exists():
             self._path.touch()
@@ -140,8 +141,22 @@ class AuditLogger:
         return entries[-1].get("hash", "genesis")
 
     def _compute_hash(self, data: dict) -> str:
-        """Compute SHA-256 hash of a dict's canonical JSON representation."""
+        """
+        Compute HMAC-SHA-256 of a dict's canonical JSON representation.
+
+        Uses the master key as the HMAC key so that an attacker who gains
+        file access but not the master key cannot recompute valid hashes
+        after tampering with log entries.
+        """
+        import hmac
         canonical = json.dumps(data, sort_keys=True, separators=(",", ":"))
+        if self._hmac_key:
+            return hmac.new(
+                self._hmac_key,
+                canonical.encode("utf-8"),
+                hashlib.sha256,
+            ).hexdigest()
+        # Fallback: bare SHA-256 if no key provided (backward compat)
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     def _read_all(self) -> list[dict]:
