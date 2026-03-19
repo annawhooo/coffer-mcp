@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from coffer_mcp.audit import AuditLogger
+import time
 from coffer_mcp.store import EncryptedStore
 
 
@@ -28,5 +29,17 @@ def vault_list(store: EncryptedStore, audit: AuditLogger) -> list[dict[str, Any]
         status="success",
         details={"count": len(aliases)},
     )
+
+    for a in aliases:
+        exp = a.get("expires_at")
+        if exp is not None:
+            if time.time() > exp:
+                a["status"] = "EXPIRED"
+            elif time.time() > exp - 7 * 86400:
+                a["status"] = "EXPIRING_SOON"
+            else:
+                a["status"] = "active"
+        else:
+            a["status"] = "active"
 
     return aliases

@@ -25,6 +25,7 @@ from coffer_mcp.audit import AuditLogger
 from coffer_mcp.store import EncryptedStore, get_master_key
 from coffer_mcp.tools.vault_http_request import vault_http_request as _vault_http_request
 from coffer_mcp.tools.vault_list import vault_list as _vault_list
+from coffer_mcp.tools.vault_test import vault_test as _vault_test
 from coffer_mcp.browser.playwright_bridge import (
     browser_web_fetch as _browser_web_fetch,
     browser_web_login as _browser_web_login,
@@ -203,6 +204,30 @@ async def coffer_web_logout(alias: str) -> str:
         alias: The credential alias whose session to close.
     """
     result = await _browser_web_logout(alias)
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+async def coffer_test(alias: str, url: str = "") -> str:
+    """
+    Test a stored credential by making a lightweight authenticated request.
+
+    Verifies the credential is valid, not expired, and the target server
+    accepts it. Returns pass/fail, status code, and latency.
+
+    If no URL is provided, tests against the first URL in the credential's
+    allowlist.
+
+    Args:
+        alias: The credential alias to test.
+        url: Optional URL to test against.
+    """
+    result = await _vault_test(
+        store=_get_store(),
+        audit=_get_audit(),
+        alias=alias,
+        url=url,
+    )
     return json.dumps(result, indent=2)
 
 

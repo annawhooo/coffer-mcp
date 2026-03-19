@@ -72,7 +72,7 @@ def init():
 @click.option("--alias", prompt="Credential alias (e.g., 'onetrust-blog')")
 @click.option(
     "--auth-type",
-    type=click.Choice(["bearer_token", "basic_auth", "api_key_header", "web_login"]),
+    type=click.Choice(["bearer_token", "basic_auth", "api_key_header", "web_login", "oauth2_client_credentials"]),
     prompt="Authentication type",
 )
 @click.option("--username", prompt="Username / email (leave blank if N/A)", default="")
@@ -87,7 +87,12 @@ def init():
     prompt="Allowed HTTP methods (comma-separated, e.g., 'GET,POST')",
     default="GET",
 )
-def add(alias, auth_type, username, description, allowed_urls, allowed_methods):
+@click.option(
+    "--expires",
+    default="",
+    help="Expiry date (YYYY-MM-DD or days from now like '90d'). Leave blank for no expiry.",
+)
+def add(alias, auth_type, username, description, allowed_urls, allowed_methods, expires):
     """Add a new credential to the vault."""
     secret = getpass.getpass("Secret (password / token / API key): ")
 
@@ -98,6 +103,29 @@ def add(alias, auth_type, username, description, allowed_urls, allowed_methods):
     url_list = [u.strip() for u in allowed_urls.split(",") if u.strip()]
     method_list = [m.strip().upper() for m in allowed_methods.split(",") if m.strip()]
 
+    # Parse expiry
+    expires_at = None
+    if expires:
+        import time as _time
+        expires = expires.strip()
+        if expires.endswith("d"):
+            # Relative: "90d" = 90 days from now
+            try:
+                days = int(expires[:-1])
+                expires_at = _time.time() + days * 86400
+            except ValueError:
+                click.echo(f"Error: Invalid expiry format '{expires}'. Use YYYY-MM-DD or Nd (e.g., 90d).", err=True)
+                sys.exit(1)
+        else:
+            # Absolute: YYYY-MM-DD
+            try:
+                from datetime import datetime, timezone
+                dt = datetime.strptime(expires, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                expires_at = dt.timestamp()
+            except ValueError:
+                click.echo(f"Error: Invalid date '{expires}'. Use YYYY-MM-DD or Nd (e.g., 90d).", err=True)
+                sys.exit(1)
+
     entry = CredentialEntry(
         alias=alias,
         auth_type=auth_type,
@@ -106,6 +134,7 @@ def add(alias, auth_type, username, description, allowed_urls, allowed_methods):
         allowed_urls=url_list,
         allowed_methods=method_list,
         description=description,
+        expires_at=expires_at,
     )
 
     store = _get_store()
@@ -130,10 +159,16 @@ def list_creds():
         click.echo("No credentials stored. Add one with: coffer add")
         return
 
-    click.echo(f"\n{'Alias':<25} {'Type':<18} {'Description'}")
-    click.echo("-" * 70)
+    click.echo(f"\n{'Alias':<25} {'Type':<18} {'Status':<15} {'Description'}")
+    click.echo("-" * 80)
     for a in aliases:
-        click.echo(f"{a['alias']:<25} {a['auth_type']:<18} {a['description']}")
+        status = a.get("status", "active")
+        status_display = status
+        if status == "EXPIRED":
+            status_display = "EXPIRED!"
+        elif status == "EXPIRING_SOON":
+            status_display = "expiring soon"
+        click.echo(f"{a['alias']:<25} {a['auth_type']:<18} {status_display:<15} {a['description']}")
     click.echo(f"\n{len(aliases)} credential(s) stored.")
 
 
@@ -175,6 +210,116 @@ def audit(alias, limit):
             )
     else:
         click.echo("No audit events recorded.")
+
+
+@main.command()
+@click.argument("alias")
+def rotate(alias):
+    """Rotate the secret for an existing credential."""
+    store = _get_store()
+    audit = _get_audit()
+
+    # Verify credential exists
+    try:
+        entry = store.get(alias)
+    except KeyError:
+        click.echo(f"No credential found with alias '{alias}'.", err=True)
+        sys.exit(1)
+
+    click.echo(f"Rotating secret for '{alias}' (type: {entry.auth_type})")
+    new_secret = getpass.getpass("New secret (password / token / API key): ")
+    if not new_secret:
+        click.echo("Error: Secret cannot be empty.", err=True)
+        sys.exit(1)
+
+    confirm = getpass.getpass("Confirm new secret: ")
+    if new_secret != confirm:
+        click.echo("Error: Secrets do not match.", err=True)
+        sys.exit(1)
+
+    store.update_secret(alias, new_secret)
+    audit.log("credential.rotated", alias, "success")
+    click.echo(f"Secret for '{alias}' rotated successfully.")
+
+
+@main.command()
+@click.argument("alias")
+@click.option("--url", default="", help="URL to test against (defaults to first allowed URL).")
+def test(alias, url):
+    """Test a credential by making a lightweight authenticated request."""
+    import asyncio
+    from coffer_mcp.tools.vault_test import vault_test
+
+    store = _get_store()
+    audit = _get_audit()
+
+    click.echo(f"Testing credential '{alias}'...")
+    result = asyncio.run(vault_test(store, audit, alias, url=url))
+
+    if result.get("test") == "PASS":
+        click.echo(
+            f"  PASS  {result['method']} {result['url']}  "
+            f"-> {result['status_code']}  ({result['latency_ms']}ms)"
+        )
+    elif result.get("test") == "FAIL":
+        reason = result.get("reason", f"HTTP {result.get('status_code', '?')}")
+        click.echo(f"  FAIL  {reason}", err=True)
+        sys.exit(1)
+    else:
+        click.echo(f"  ERROR  {result.get('message', 'Unknown error')}", err=True)
+        sys.exit(1)
+
+
+@main.command(name="export")
+@click.argument("output_path", type=click.Path())
+def export_cmd(output_path):
+    """Export all credentials to an encrypted backup file."""
+    from pathlib import Path
+    from coffer_mcp.store.backup import export_vault
+
+    store = _get_store()
+    passphrase = getpass.getpass("Backup passphrase: ")
+    confirm = getpass.getpass("Confirm backup passphrase: ")
+
+    if passphrase != confirm:
+        click.echo("Error: Passphrases do not match.", err=True)
+        sys.exit(1)
+    if len(passphrase) < 8:
+        click.echo("Error: Passphrase must be at least 8 characters.", err=True)
+        sys.exit(1)
+
+    result = export_vault(store, passphrase, Path(output_path))
+    if result["status"] == "ok":
+        click.echo(f"Exported {result['count']} credential(s) to {result['path']}")
+    else:
+        click.echo(f"Error: {result.get('message', 'Unknown error')}", err=True)
+        sys.exit(1)
+
+
+@main.command(name="import")
+@click.argument("input_path", type=click.Path(exists=True))
+@click.option("--overwrite", is_flag=True, help="Overwrite existing credentials with same alias.")
+def import_cmd(input_path, overwrite):
+    """Import credentials from an encrypted backup file."""
+    from pathlib import Path
+    from coffer_mcp.store.backup import import_vault
+
+    store = _get_store()
+    passphrase = getpass.getpass("Backup passphrase: ")
+
+    result = import_vault(store, passphrase, Path(input_path), overwrite=overwrite)
+    if result["status"] == "ok":
+        click.echo(
+            f"Imported {result['imported']}, "
+            f"skipped {result['skipped']} "
+            f"(of {result['total_in_backup']} in backup)"
+        )
+        if result["errors"]:
+            for err in result["errors"]:
+                click.echo(f"  Error: {err}", err=True)
+    else:
+        click.echo(f"Error: {result.get('message', 'Unknown error')}", err=True)
+        sys.exit(1)
 
 
 @main.command()
