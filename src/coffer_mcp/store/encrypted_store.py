@@ -34,6 +34,7 @@ class CredentialEntry:
     description: str = ""
     created_at: float = field(default_factory=time.time)
     rotated_at: float = field(default_factory=time.time)
+    expires_at: float | None = None  # Unix timestamp; None = never expires
 
     def metadata(self) -> dict[str, Any]:
         """Return only non-secret fields (safe to show the LLM)."""
@@ -46,6 +47,7 @@ class CredentialEntry:
             "description": self.description,
             "created_at": self.created_at,
             "rotated_at": self.rotated_at,
+            "expires_at": self.expires_at,
         }
 
 
@@ -60,6 +62,7 @@ class EncryptedBlob:
     description: str
     created_at: float
     rotated_at: float
+    expires_at: float | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -99,6 +102,13 @@ class EncryptedStore:
         blobs.append(self._encrypt(entry))
         self._write_blobs(blobs)
 
+    def is_expired(self, alias: str) -> bool:
+        """Check if a credential has passed its expiry date."""
+        entry = self.get(alias)
+        if entry.expires_at is None:
+            return False
+        return time.time() > entry.expires_at
+
     def get(self, alias: str) -> CredentialEntry:
         """Decrypt and return a credential by alias."""
         blobs = self._read_blobs()
@@ -117,6 +127,7 @@ class EncryptedStore:
                 "description": b["description"],
                 "created_at": b["created_at"],
                 "rotated_at": b["rotated_at"],
+                "expires_at": b.get("expires_at"),
             }
             for b in blobs
         ]
@@ -176,6 +187,7 @@ class EncryptedStore:
             "description": entry.description,
             "created_at": entry.created_at,
             "rotated_at": entry.rotated_at,
+            "expires_at": entry.expires_at,
         }
 
     def _decrypt(self, blob: dict) -> CredentialEntry:
@@ -195,6 +207,7 @@ class EncryptedStore:
             description=blob["description"],
             created_at=blob["created_at"],
             rotated_at=blob["rotated_at"],
+            expires_at=blob.get("expires_at"),
         )
 
     # -- file I/O ------------------------------------------------------------

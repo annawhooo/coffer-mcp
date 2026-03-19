@@ -8,6 +8,7 @@ the actual credential.
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import httpx
@@ -53,7 +54,20 @@ async def vault_http_request(
         audit.log("credential.access_failed", alias, "failure", {"reason": "not_found"})
         return {"status": "error", "message": f"No credential found with alias '{alias}'"}
 
-    # 2. Enforce URL allowlist
+    # 2. Check credential expiry
+    if entry.expires_at and time.time() > entry.expires_at:
+        from datetime import datetime, timezone
+        exp_str = datetime.fromtimestamp(entry.expires_at, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        audit.log("credential.expired", alias, "failure", {"expired_at": exp_str})
+        return {
+            "status": "error",
+            "message": (
+                f"Credential '{alias}' expired on {exp_str}. "
+                f"Ask the user to rotate it with: coffer rotate {alias}"
+            ),
+        }
+
+    # 3. Enforce URL allowlist
     if not check_url_allowed(entry, url):
         audit.log(
             "credential.access_denied",
@@ -66,7 +80,7 @@ async def vault_http_request(
             "message": f"URL '{url}' is not in the allowlist for credential '{alias}'",
         }
 
-    # 3. Enforce method allowlist
+    # 4. Enforce method allowlist
     if not check_method_allowed(entry, method):
         audit.log(
             "credential.access_denied",
@@ -79,7 +93,7 @@ async def vault_http_request(
             "message": f"Method '{method}' is not allowed for credential '{alias}'",
         }
 
-    # 4. Build the request with injected auth
+    # 5. Build the request with injected auth
     request_headers = dict(headers or {})
 
     if entry.auth_type == "bearer_token":
@@ -88,6 +102,16 @@ async def vault_http_request(
         import base64
         encoded = base64.b64encode(f"{entry.username}:{entry.secret}".encode()).decode()
         request_headers["Authorization"] = f"Basic {encoded}"
+    elif entry.auth_type == "oauth2_client_credentials":
+        from coffer_mcp.tools.oauth2 import get_cached_token
+        parts = entry.secret.split("|", 1)
+        token_url = parts[0]
+        scope = parts[1] if len(parts) > 1 else ""
+        id_parts = entry.username.split("|", 1)
+        client_id = id_parts[0]
+        client_secret = id_parts[1] if len(id_parts) > 1 else ""
+        access_token = await get_cached_token(alias, client_id, client_secret, token_url, scope)
+        request_headers["Authorization"] = f"Bearer {access_token}"
     elif entry.auth_type == "api_key_header":
         # Convention: secret is in format "HeaderName: value"
         if ":" in entry.secret:
@@ -96,7 +120,7 @@ async def vault_http_request(
         else:
             request_headers["X-API-Key"] = entry.secret
 
-    # 5. Make the request (redirects checked per-hop against allowlist)
+    # 6. Make the request (redirects checked per-hop against allowlist)
     MAX_REDIRECTS = 10
     current_url = url
     try:
@@ -156,12 +180,12 @@ async def vault_http_request(
                     "message": f"Too many redirects ({MAX_REDIRECTS}) for '{url}'",
                 }
 
-        # 6. Sanitize the response
+        # 7. Sanitize the response
         response_text = response.text
         clean_text = sanitize_response(response_text, entry)
         clean_text = sanitize_content(clean_text)
 
-        # 7. Audit success
+        # 8. Audit success
         audit.log(
             "credential.used",
             alias,
