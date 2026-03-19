@@ -1,5 +1,5 @@
 """
-Alcove MCP Server.
+Coffer MCP Server.
 
 Exposes credential vault tools to Claude Desktop (and Claude Code) via
 the Model Context Protocol. Credentials are encrypted at rest, resolved
@@ -8,9 +8,9 @@ server-side, and never returned to the LLM context.
 Usage (Claude Desktop claude_desktop_config.json):
     {
         "mcpServers": {
-            "Alcove": {
+            "Coffer": {
                 "command": "python",
-                "args": ["-m", "alcove_mcp.server"]
+                "args": ["-m", "coffer_mcp.server"]
             }
         }
     }
@@ -21,11 +21,11 @@ from __future__ import annotations
 import json
 from mcp.server.fastmcp import FastMCP
 
-from alcove_mcp.audit import AuditLogger
-from alcove_mcp.store import EncryptedStore, get_master_key
-from alcove_mcp.tools.vault_http_request import vault_http_request as _vault_http_request
-from alcove_mcp.tools.vault_list import vault_list as _vault_list
-from alcove_mcp.browser.playwright_bridge import (
+from coffer_mcp.audit import AuditLogger
+from coffer_mcp.store import EncryptedStore, get_master_key
+from coffer_mcp.tools.vault_http_request import vault_http_request as _vault_http_request
+from coffer_mcp.tools.vault_list import vault_list as _vault_list
+from coffer_mcp.browser.playwright_bridge import (
     browser_web_fetch as _browser_web_fetch,
     browser_web_login as _browser_web_login,
     browser_web_logout as _browser_web_logout,
@@ -36,9 +36,9 @@ from alcove_mcp.browser.playwright_bridge import (
 # ---------------------------------------------------------------------------
 
 mcp = FastMCP(
-    "Alcove",
+    "Coffer",
     instructions=(
-        "Alcove — the sheltered space where your secrets live. "
+        "Coffer — credential vault for LLM agents. "
         "Stores encrypted credentials and uses them on your behalf — "
         "passwords and API keys never appear in the conversation."
     ),
@@ -61,7 +61,13 @@ def _get_store() -> EncryptedStore:
 def _get_audit() -> AuditLogger:
     global _audit
     if _audit is None:
-        _audit = AuditLogger()
+        # Derive a separate HMAC key from the master key for audit chain
+        # integrity. This prevents attackers with file access (but not the
+        # master key) from recomputing valid hashes after log tampering.
+        import hashlib
+        master_key = get_master_key()
+        hmac_key = hashlib.sha256(b"coffer-audit-hmac:" + master_key).digest()
+        _audit = AuditLogger(hmac_key=hmac_key)
     return _audit
 
 
@@ -70,7 +76,7 @@ def _get_audit() -> AuditLogger:
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
-def alcove_list() -> str:
+def coffer_list() -> str:
     """
     List all stored credentials. Returns aliases and metadata only — never
     passwords, API keys, or tokens.
@@ -82,7 +88,7 @@ def alcove_list() -> str:
 
 
 @mcp.tool()
-async def alcove_http_request(
+async def coffer_http_request(
     alias: str,
     url: str,
     method: str = "GET",
@@ -97,7 +103,7 @@ async def alcove_http_request(
     You never see the actual password or API key — only the response.
 
     Args:
-        alias: The credential alias to use (see alcove_list).
+        alias: The credential alias to use (see coffer_list).
         url: The target URL.
         method: HTTP method (GET, POST, PUT, DELETE, PATCH).
         body: Optional JSON body as a string (for POST/PUT/PATCH).
@@ -122,7 +128,7 @@ async def alcove_http_request(
 
 
 @mcp.tool()
-async def alcove_web_login(
+async def coffer_web_login(
     alias: str,
     login_url: str,
     username_selector: str = 'input[name="username"], input[type="email"], input#username',
@@ -137,7 +143,7 @@ async def alcove_web_login(
     is resolved from the vault, filled into the login form, and submitted.
     Your password never appears in the conversation.
 
-    After login, use alcove_web_fetch to read pages from the authenticated session.
+    After login, use coffer_web_fetch to read pages from the authenticated session.
 
     Args:
         alias: The credential alias to use (must be auth_type 'web_login').
@@ -161,7 +167,7 @@ async def alcove_web_login(
 
 
 @mcp.tool()
-async def alcove_web_fetch(
+async def coffer_web_fetch(
     alias: str,
     url: str,
     extract_content: bool = True,
@@ -169,7 +175,7 @@ async def alcove_web_fetch(
     """
     Fetch a page from an authenticated web session and return clean content.
 
-    Must call alcove_web_login first to establish a session.
+    Must call coffer_web_login first to establish a session.
     Returns the page content as clean markdown (or raw HTML if requested).
 
     Args:
@@ -189,7 +195,7 @@ async def alcove_web_fetch(
 
 
 @mcp.tool()
-async def alcove_web_logout(alias: str) -> str:
+async def coffer_web_logout(alias: str) -> str:
     """
     Close an authenticated web session.
 
@@ -201,7 +207,7 @@ async def alcove_web_logout(alias: str) -> str:
 
 
 @mcp.tool()
-def alcove_audit(alias: str = "", limit: int = 20) -> str:
+def coffer_audit(alias: str = "", limit: int = 20) -> str:
     """
     View recent audit log entries and verify chain integrity.
 

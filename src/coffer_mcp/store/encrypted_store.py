@@ -71,7 +71,7 @@ class EncryptedStore:
     Manages encrypted credentials on disk.
 
     File layout:
-        ~/.alcove/credentials.json — list of EncryptedBlob dicts
+        ~/.coffer/credentials.json — list of EncryptedBlob dicts
     """
 
     def __init__(self, master_key: bytes, store_path: Path | None = None):
@@ -83,7 +83,7 @@ class EncryptedStore:
         if len(master_key) != 32:
             raise ValueError("Master key must be exactly 32 bytes (256 bits)")
         self._gcm = AESGCM(master_key)
-        self._path = store_path or Path.home() / ".alcove" / "credentials.json"
+        self._path = store_path or Path.home() / ".coffer" / "credentials.json"
         self._path.parent.mkdir(parents=True, exist_ok=True)
         if not self._path.exists():
             self._write_blobs([])
@@ -131,12 +131,28 @@ class EncryptedStore:
         return True
 
     def update_secret(self, alias: str, new_secret: str) -> None:
-        """Rotate the secret for an existing credential."""
-        entry = self.get(alias)
-        self.remove(alias)
-        entry.secret = new_secret
-        entry.rotated_at = time.time()
-        self.add(entry)
+        """
+        Rotate the secret for an existing credential.
+
+        This is atomic: the old credential is replaced in a single
+        write operation. If the process crashes mid-rotation, the
+        original credential remains intact.
+        """
+        blobs = self._read_blobs()
+        found = False
+        for i, blob in enumerate(blobs):
+            if blob["alias"] == alias:
+                # Decrypt, update, re-encrypt in memory
+                entry = self._decrypt(blob)
+                entry.secret = new_secret
+                entry.rotated_at = time.time()
+                blobs[i] = self._encrypt(entry)
+                found = True
+                break
+        if not found:
+            raise KeyError(f"No credential found with alias '{alias}'")
+        # Single atomic write replaces the entire file
+        self._write_blobs(blobs)
 
     # -- encryption primitives -----------------------------------------------
 

@@ -1,13 +1,13 @@
 """
-Alcove CLI — manage credentials from the command line.
+Coffer CLI — manage credentials from the command line.
 
 Usage:
-    alcove add           Add a new credential (interactive)
-    alcove list          List all stored credentials
-    alcove remove ALIAS  Remove a credential
-    alcove audit         View audit log and verify integrity
-    alcove init          Set up the master key in the OS keyring
-    alcove serve         Start the MCP server (for debugging)
+    coffer add           Add a new credential (interactive)
+    coffer list          List all stored credentials
+    coffer remove ALIAS  Remove a credential
+    coffer audit         View audit log and verify integrity
+    coffer init          Set up the master key in the OS keyring
+    coffer serve         Start the MCP server (for debugging)
 """
 
 from __future__ import annotations
@@ -18,8 +18,8 @@ import sys
 
 import click
 
-from alcove_mcp.audit import AuditLogger
-from alcove_mcp.store import (
+from coffer_mcp.audit import AuditLogger
+from coffer_mcp.store import (
     CredentialEntry,
     EncryptedStore,
     clear_keyring,
@@ -33,19 +33,22 @@ def _get_store() -> EncryptedStore:
 
 
 def _get_audit() -> AuditLogger:
-    return AuditLogger()
+    import hashlib
+    master_key = get_master_key()
+    hmac_key = hashlib.sha256(b"coffer-audit-hmac:" + master_key).digest()
+    return AuditLogger(hmac_key=hmac_key)
 
 
 @click.group()
 def main():
-    """Alcove — credential vault for LLM agents."""
+    """Coffer — credential vault for LLM agents."""
     pass
 
 
 @main.command()
 def init():
     """Set up the master key in the OS keyring."""
-    click.echo("Setting up Alcove master key.")
+    click.echo("Setting up Coffer master key.")
     click.echo("This passphrase encrypts all your stored credentials.")
     click.echo()
 
@@ -62,7 +65,7 @@ def init():
 
     key = store_master_key_in_keyring(passphrase)
     click.echo(f"Master key stored in OS keyring (key fingerprint: {key[:4].hex()}...)")
-    click.echo("You can now add credentials with: alcove add")
+    click.echo("You can now add credentials with: coffer add")
 
 
 @main.command()
@@ -124,7 +127,7 @@ def list_creds():
     aliases = store.list_aliases()
 
     if not aliases:
-        click.echo("No credentials stored. Add one with: alcove add")
+        click.echo("No credentials stored. Add one with: coffer add")
         return
 
     click.echo(f"\n{'Alias':<25} {'Type':<18} {'Description'}")
@@ -177,8 +180,8 @@ def audit(alias, limit):
 @main.command()
 def serve():
     """Start the MCP server (for debugging)."""
-    click.echo("Starting Alcove MCP server...")
-    from alcove_mcp.server import main as server_main
+    click.echo("Starting Coffer MCP server...")
+    from coffer_mcp.server import main as server_main
     server_main()
 
 

@@ -1,8 +1,8 @@
 {
     "mcpServers": {
-        "alcove": {
+        "coffer": {
             "command": "python",
-            "args": ["-m", "alcove_mcp.server"]
+            "args": ["-m", "coffer_mcp.server"]
         }
     }
 }

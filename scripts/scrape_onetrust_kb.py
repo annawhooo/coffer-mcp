@@ -2,7 +2,7 @@
 OneTrust Knowledge Base Scraper
 
 Scrapes Cookie Consent articles from my.onetrust.com and saves them as
-individual markdown files. Uses Alcove's credential store to authenticate.
+individual markdown files. Uses Coffer's credential store to authenticate.
 
 Outputs to: ~/OneTrust_KB/cookie_consent/
 Each article is saved as: <slug>.md
@@ -21,11 +21,11 @@ import sys
 import time
 from pathlib import Path
 
-# Add alcove to the import path
+# Add coffer to the import path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from alcove_mcp.store.encrypted_store import EncryptedStore
-from alcove_mcp.store.keychain import get_master_key
+from coffer_mcp.store.encrypted_store import EncryptedStore
+from coffer_mcp.store.keychain import get_master_key
 
 # ---------------------------------------------------------------------------
 # Config
@@ -50,7 +50,7 @@ async def launch_and_login():
     """Launch Playwright, log into OneTrust, and return the authenticated page."""
     from playwright.async_api import async_playwright
 
-    # Get credentials from Alcove vault
+    # Get credentials from Coffer vault
     master_key = get_master_key()
     store = EncryptedStore(master_key)
     entry = store.get(ALIAS)

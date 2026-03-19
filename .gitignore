@@ -28,8 +28,8 @@ Thumbs.db
 htmlcov/
 .coverage
 
-# Krypteia vault data (NEVER commit these)
-.krypteia/
+# Coffer vault data (NEVER commit these)
+.coffer/
 credentials.json
 audit.jsonl
 .master-key
