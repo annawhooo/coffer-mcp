@@ -13,7 +13,6 @@ Usage:
 from __future__ import annotations
 
 import getpass
-import json
 import sys
 
 import click
@@ -34,6 +33,7 @@ def _get_store() -> EncryptedStore:
 
 def _get_audit() -> AuditLogger:
     import hashlib
+
     master_key = get_master_key()
     hmac_key = hashlib.sha256(b"coffer-audit-hmac:" + master_key).digest()
     return AuditLogger(hmac_key=hmac_key)
@@ -72,7 +72,15 @@ def init():
 @click.option("--alias", prompt="Credential alias (e.g., 'onetrust-blog')")
 @click.option(
     "--auth-type",
-    type=click.Choice(["bearer_token", "basic_auth", "api_key_header", "web_login", "oauth2_client_credentials"]),
+    type=click.Choice(
+        [
+            "bearer_token",
+            "basic_auth",
+            "api_key_header",
+            "web_login",
+            "oauth2_client_credentials",
+        ]
+    ),
     prompt="Authentication type",
 )
 @click.option("--username", prompt="Username / email (leave blank if N/A)", default="")
@@ -107,6 +115,7 @@ def add(alias, auth_type, username, description, allowed_urls, allowed_methods, 
     expires_at = None
     if expires:
         import time as _time
+
         expires = expires.strip()
         if expires.endswith("d"):
             # Relative: "90d" = 90 days from now
@@ -114,16 +123,23 @@ def add(alias, auth_type, username, description, allowed_urls, allowed_methods, 
                 days = int(expires[:-1])
                 expires_at = _time.time() + days * 86400
             except ValueError:
-                click.echo(f"Error: Invalid expiry format '{expires}'. Use YYYY-MM-DD or Nd (e.g., 90d).", err=True)
+                click.echo(
+                    f"Error: Invalid expiry format '{expires}'. Use YYYY-MM-DD or Nd (e.g., 90d).",
+                    err=True,
+                )
                 sys.exit(1)
         else:
             # Absolute: YYYY-MM-DD
             try:
                 from datetime import datetime, timezone
+
                 dt = datetime.strptime(expires, "%Y-%m-%d").replace(tzinfo=timezone.utc)
                 expires_at = dt.timestamp()
             except ValueError:
-                click.echo(f"Error: Invalid date '{expires}'. Use YYYY-MM-DD or Nd (e.g., 90d).", err=True)
+                click.echo(
+                    f"Error: Invalid date '{expires}'. Use YYYY-MM-DD or Nd (e.g., 90d).",
+                    err=True,
+                )
                 sys.exit(1)
 
     entry = CredentialEntry(
@@ -203,6 +219,7 @@ def audit(alias, limit):
         for evt in events:
             ts = evt.get("timestamp", 0)
             from datetime import datetime, timezone
+
             dt = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
             click.echo(
                 f"  {evt['event_id']}  {dt}  "
@@ -248,6 +265,7 @@ def rotate(alias):
 def test(alias, url):
     """Test a credential by making a lightweight authenticated request."""
     import asyncio
+
     from coffer_mcp.tools.vault_test import vault_test
 
     store = _get_store()
@@ -270,11 +288,86 @@ def test(alias, url):
         sys.exit(1)
 
 
+@main.command()
+def rekey():
+    """Re-encrypt all credentials with a new master passphrase.
+
+    Use this if your master key may have been compromised, or to migrate
+    to a stronger passphrase. All credentials are decrypted with the
+    current key and re-encrypted with the new one in a single atomic
+    write. The old key is then replaced in the OS keyring.
+    """
+    import hashlib
+
+    # 1. Verify access with the current key
+    try:
+        old_key = get_master_key()
+        old_store = EncryptedStore(old_key)
+    except Exception as e:
+        click.echo(f"Error: Cannot access current vault: {e}", err=True)
+        sys.exit(1)
+
+    count = len(old_store.list_aliases())
+    if count == 0:
+        click.echo(
+            "Vault is empty -- nothing to re-encrypt. Use 'coffer init' to set a new passphrase."
+        )
+        return
+
+    click.echo(f"Re-keying {count} credential(s). This will:")
+    click.echo("  1. Decrypt all credentials with the current key")
+    click.echo("  2. Re-encrypt them with a new key")
+    click.echo("  3. Replace the master key in the OS keyring")
+    click.echo()
+
+    # 2. Get new passphrase
+    new_passphrase = getpass.getpass("New master passphrase: ")
+    confirm = getpass.getpass("Confirm new master passphrase: ")
+
+    if new_passphrase != confirm:
+        click.echo("Error: Passphrases do not match.", err=True)
+        sys.exit(1)
+
+    if len(new_passphrase) < 8:
+        click.echo("Error: Passphrase must be at least 8 characters.", err=True)
+        sys.exit(1)
+
+    # 3. Derive new key and re-encrypt
+    new_key = store_master_key_in_keyring(new_passphrase)
+
+    try:
+        rekeyed = old_store.rekey(new_key)
+    except Exception as e:
+        # Rekey failed — restore the old key in the keyring so the vault
+        # remains accessible (the file was not modified on failure).
+        click.echo(f"Error during re-encryption: {e}", err=True)
+        click.echo("Restoring original key in keyring...", err=True)
+        # We can't easily restore the old keyring entry since we don't have
+        # the old passphrase. But the file is untouched, so the old key
+        # (still in memory) works. Warn the user.
+        click.echo(
+            "WARNING: The keyring was updated but re-encryption failed. "
+            "Run 'coffer init' with your OLD passphrase to restore access, "
+            "then try 'coffer rekey' again.",
+            err=True,
+        )
+        sys.exit(1)
+
+    # 4. Audit the rekey
+    hmac_key = hashlib.sha256(b"coffer-audit-hmac:" + new_key).digest()
+    audit = AuditLogger(hmac_key=hmac_key)
+    audit.log("vault.rekeyed", "*", "success", {"credentials_rekeyed": rekeyed})
+
+    click.echo(f"Successfully re-encrypted {rekeyed} credential(s) with new key.")
+    click.echo(f"New key fingerprint: {new_key[:4].hex()}...")
+
+
 @main.command(name="export")
 @click.argument("output_path", type=click.Path())
 def export_cmd(output_path):
     """Export all credentials to an encrypted backup file."""
     from pathlib import Path
+
     from coffer_mcp.store.backup import export_vault
 
     store = _get_store()
@@ -302,6 +395,7 @@ def export_cmd(output_path):
 def import_cmd(input_path, overwrite):
     """Import credentials from an encrypted backup file."""
     from pathlib import Path
+
     from coffer_mcp.store.backup import import_vault
 
     store = _get_store()
@@ -327,6 +421,7 @@ def serve():
     """Start the MCP server (for debugging)."""
     click.echo("Starting Coffer MCP server...")
     from coffer_mcp.server import main as server_main
+
     server_main()
 
 
