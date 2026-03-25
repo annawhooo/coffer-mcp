@@ -10,7 +10,7 @@
 |---|------|--------|--------|
 | 1 | **Formal threat model (STRIDE on MCP boundary)** — structured analysis of trust boundaries, attack surfaces, and the novel LLM↔credential-store interface | ✅ DONE | 1-2 days |
 | 2 | **Dependency supply chain** — pin versions with hashes, add pip-audit to CI, evaluate whether readability-lxml/html2text C extensions are worth the attack surface | ✅ DONE | Half day |
-| 3 | **Memory handling of secrets** — decrypted secrets in Python strings are never zeroed; evaluate subprocess isolation for secret injection | TODO | Evaluate |
+| 3 | **Memory handling of secrets** — SecureBuffer zeroing, wipe_entry after use, core dump disabled, mlock. Residual: Python str immutability (see THREAT_MODEL.md Appendix A) | ✅ DONE | Half day |
 | 4 | **MCP trust boundary hardening** — prompt injection in fetched pages could instruct Claude to exfiltrate credentials via coffer_http_request; URL allowlist is the only defense | ✅ DONE | Evaluate |
 
 ## Tier 2 — Architectural maturity
@@ -48,3 +48,4 @@
 | Fix #1: login_url allowlist enforcement in web_login/web_fetch | 2026-03-25 |
 | Fix #2: OAuth2 access token sanitization from responses | 2026-03-25 |
 | MCP trust boundary: URL allowlist on all credential-using tools | 2026-03-25 |
+| Secure memory: SecureBuffer, wipe_entry, harden_process + residual risk docs | 2026-03-25 |

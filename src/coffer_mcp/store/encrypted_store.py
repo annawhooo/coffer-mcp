@@ -20,6 +20,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from coffer_mcp.filelock import FileLock
 from coffer_mcp.permissions import secure_directory, secure_file
+from coffer_mcp.secmem import SecureBuffer
 
 # ---------------------------------------------------------------------------
 # Data models
@@ -258,16 +259,28 @@ class EncryptedStore:
 
         Tries AAD-based decryption first; falls back to legacy no-AAD
         for entries encrypted before AAD was added.
+
+        Uses SecureBuffer to zero the decrypted plaintext from memory
+        as soon as the JSON fields have been extracted.
         """
         nonce = bytes.fromhex(blob["nonce"])
         ciphertext = bytes.fromhex(blob["ciphertext"])
         aad = blob["alias"].encode("utf-8")
         try:
-            plaintext = self._gcm.decrypt(nonce, ciphertext, aad)
+            raw_plaintext = self._gcm.decrypt(nonce, ciphertext, aad)
         except InvalidTag:
             # Legacy entry encrypted without AAD — fall back
-            plaintext = self._gcm.decrypt(nonce, ciphertext, None)
-        secret_data = json.loads(plaintext.decode("utf-8"))
+            raw_plaintext = self._gcm.decrypt(nonce, ciphertext, None)
+
+        # Wrap in SecureBuffer so we can zero the plaintext after parsing
+        with SecureBuffer(raw_plaintext) as buf:
+            secret_data = json.loads(buf.decode("utf-8"))
+
+        # Zero the original bytes object as best we can (mutable copy)
+        raw_mut = bytearray(len(raw_plaintext))
+        for i in range(len(raw_mut)):
+            raw_mut[i] = 0
+        del raw_plaintext
 
         return CredentialEntry(
             alias=blob["alias"],
