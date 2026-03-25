@@ -141,9 +141,9 @@ def _get_or_create_file_key() -> bytes:
             username = os.environ.get("USERNAME", "")
             if username:
                 subprocess.run(
-                    ["icacls", str(key_path), "/inheritance:r",
-                     "/grant:r", f"{username}:(F)"],
-                    capture_output=True, timeout=10,
+                    ["icacls", str(key_path), "/inheritance:r", "/grant:r", f"{username}:(F)"],
+                    capture_output=True,
+                    timeout=10,
                 )
         except Exception:
             pass

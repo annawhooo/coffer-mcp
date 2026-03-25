@@ -1,8 +1,6 @@
 """Tests for the encrypted credential store."""
 
 import os
-import tempfile
-from pathlib import Path
 
 import pytest
 

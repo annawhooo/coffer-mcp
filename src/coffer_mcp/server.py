@@ -19,18 +19,24 @@ Usage (Claude Desktop claude_desktop_config.json):
 from __future__ import annotations
 
 import json
+import threading
+
 from mcp.server.fastmcp import FastMCP
 
 from coffer_mcp.audit import AuditLogger
+from coffer_mcp.browser.playwright_bridge import (
+    browser_web_fetch as _browser_web_fetch,
+)
+from coffer_mcp.browser.playwright_bridge import (
+    browser_web_login as _browser_web_login,
+)
+from coffer_mcp.browser.playwright_bridge import (
+    browser_web_logout as _browser_web_logout,
+)
 from coffer_mcp.store import EncryptedStore, get_master_key
 from coffer_mcp.tools.vault_http_request import vault_http_request as _vault_http_request
 from coffer_mcp.tools.vault_list import vault_list as _vault_list
 from coffer_mcp.tools.vault_test import vault_test as _vault_test
-from coffer_mcp.browser.playwright_bridge import (
-    browser_web_fetch as _browser_web_fetch,
-    browser_web_login as _browser_web_login,
-    browser_web_logout as _browser_web_logout,
-)
 
 # ---------------------------------------------------------------------------
 # Initialize server, store, and audit logger
@@ -46,7 +52,9 @@ mcp = FastMCP(
 )
 
 # These are initialized lazily on first tool call to avoid startup errors
-# if the keyring isn't configured yet
+# if the keyring isn't configured yet.  The lock prevents duplicate
+# initialisation when concurrent async tool calls race on first use.
+_init_lock = threading.Lock()
 _store: EncryptedStore | None = None
 _audit: AuditLogger | None = None
 
@@ -54,27 +62,34 @@ _audit: AuditLogger | None = None
 def _get_store() -> EncryptedStore:
     global _store
     if _store is None:
-        master_key = get_master_key()
-        _store = EncryptedStore(master_key)
+        with _init_lock:
+            if _store is None:  # double-checked locking
+                master_key = get_master_key()
+                _store = EncryptedStore(master_key)
     return _store
 
 
 def _get_audit() -> AuditLogger:
     global _audit
     if _audit is None:
-        # Derive a separate HMAC key from the master key for audit chain
-        # integrity. This prevents attackers with file access (but not the
-        # master key) from recomputing valid hashes after log tampering.
-        import hashlib
-        master_key = get_master_key()
-        hmac_key = hashlib.sha256(b"coffer-audit-hmac:" + master_key).digest()
-        _audit = AuditLogger(hmac_key=hmac_key)
+        with _init_lock:
+            if _audit is None:  # double-checked locking
+                # Derive a separate HMAC key from the master key for audit
+                # chain integrity. This prevents attackers with file access
+                # (but not the master key) from recomputing valid hashes
+                # after log tampering.
+                import hashlib
+
+                master_key = get_master_key()
+                hmac_key = hashlib.sha256(b"coffer-audit-hmac:" + master_key).digest()
+                _audit = AuditLogger(hmac_key=hmac_key)
     return _audit
 
 
 # ---------------------------------------------------------------------------
 # MCP Tools
 # ---------------------------------------------------------------------------
+
 
 @mcp.tool()
 def coffer_list() -> str:
@@ -111,9 +126,13 @@ async def coffer_http_request(
         headers: Optional additional headers as a JSON string.
         params: Optional query parameters as a JSON string.
     """
-    body_dict = json.loads(body) if body else None
-    headers_dict = json.loads(headers) if headers else None
-    params_dict = json.loads(params) if params else None
+    try:
+        body_dict = json.loads(body) if body else None
+        headers_dict = json.loads(headers) if headers else None
+        params_dict = json.loads(params) if params else None
+    except json.JSONDecodeError as e:
+        err = {"status": "error", "message": f"Invalid JSON: {e}"}
+        return json.dumps(err, indent=2)
 
     result = await _vault_http_request(
         store=_get_store(),
@@ -256,6 +275,7 @@ def coffer_audit(alias: str = "", limit: int = 20) -> str:
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 def main():
     """Run the MCP server via stdio transport."""
