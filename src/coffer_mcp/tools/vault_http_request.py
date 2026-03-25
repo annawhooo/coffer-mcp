@@ -119,6 +119,7 @@ async def vault_http_request(
 
     # 5. Build the request with injected auth
     request_headers = dict(headers or {})
+    extra_secrets: list[str] = []  # Runtime secrets to scrub (e.g., OAuth2 tokens)
 
     if entry.auth_type == "bearer_token":
         request_headers["Authorization"] = f"Bearer {entry.secret}"
@@ -142,6 +143,7 @@ async def vault_http_request(
         client_id, client_secret, token_url, scope = oauth2_parts
         access_token = await get_cached_token(alias, client_id, client_secret, token_url, scope)
         request_headers["Authorization"] = f"Bearer {access_token}"
+        extra_secrets.append(access_token)
     elif entry.auth_type == "api_key_header":
         # Convention: secret is in format "HeaderName: value"
         if ":" in entry.secret:
@@ -218,7 +220,7 @@ async def vault_http_request(
             response_text += f"\n\n[TRUNCATED -- response exceeded {mb} MB]"
         else:
             response_text = response.text
-        clean_text = sanitize_response(response_text, entry)
+        clean_text = sanitize_response(response_text, entry, extra_secrets=extra_secrets)
         clean_text = sanitize_content(clean_text)
 
         # 8. Audit success
@@ -245,7 +247,7 @@ async def vault_http_request(
         # via exception strings (some httpx errors include full URLs
         # with query params, headers, or auth tokens in repr).
         error_msg = str(e)
-        error_msg = sanitize_response(error_msg, entry)
+        error_msg = sanitize_response(error_msg, entry, extra_secrets=extra_secrets)
         # Further strip anything that looks like a token or key
         import re as _re
 
