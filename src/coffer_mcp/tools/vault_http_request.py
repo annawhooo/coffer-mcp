@@ -14,7 +14,15 @@ from typing import Any
 import httpx
 
 from coffer_mcp.audit import AuditLogger
-from coffer_mcp.security import check_method_allowed, check_url_allowed, sanitize_response, sanitize_content
+from coffer_mcp.security import (
+    MAX_RESPONSE_BYTES,
+    check_method_allowed,
+    check_url_allowed,
+    sanitize_content,
+    sanitize_response,
+    validate_http_method,
+    validate_oauth2_secret,
+)
 from coffer_mcp.store import EncryptedStore
 
 
@@ -47,6 +55,18 @@ async def vault_http_request(
     Returns:
         Dict with status_code, headers (safe subset), and body.
     """
+    # 0. Validate HTTP method
+    validated_method = validate_http_method(method)
+    if validated_method is None:
+        return {
+            "status": "error",
+            "message": (
+                f"Invalid HTTP method '{method}'."
+                " Must be one of: GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS."
+            ),
+        }
+    method = validated_method
+
     # 1. Resolve the credential
     try:
         entry = store.get(alias)
@@ -57,7 +77,11 @@ async def vault_http_request(
     # 2. Check credential expiry
     if entry.expires_at and time.time() > entry.expires_at:
         from datetime import datetime, timezone
-        exp_str = datetime.fromtimestamp(entry.expires_at, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+        exp_str = datetime.fromtimestamp(
+            entry.expires_at,
+            tz=timezone.utc,
+        ).strftime("%Y-%m-%d %H:%M UTC")
         audit.log("credential.expired", alias, "failure", {"expired_at": exp_str})
         return {
             "status": "error",
@@ -100,16 +124,22 @@ async def vault_http_request(
         request_headers["Authorization"] = f"Bearer {entry.secret}"
     elif entry.auth_type == "basic_auth":
         import base64
+
         encoded = base64.b64encode(f"{entry.username}:{entry.secret}".encode()).decode()
         request_headers["Authorization"] = f"Basic {encoded}"
     elif entry.auth_type == "oauth2_client_credentials":
         from coffer_mcp.tools.oauth2 import get_cached_token
-        parts = entry.secret.split("|", 1)
-        token_url = parts[0]
-        scope = parts[1] if len(parts) > 1 else ""
-        id_parts = entry.username.split("|", 1)
-        client_id = id_parts[0]
-        client_secret = id_parts[1] if len(id_parts) > 1 else ""
+
+        oauth2_parts = validate_oauth2_secret(entry.username, entry.secret)
+        if oauth2_parts is None:
+            return {
+                "status": "error",
+                "message": (
+                    f"Credential '{alias}' has invalid OAuth2 format. "
+                    f"Expected username='client_id|client_secret', secret='token_url|scope'."
+                ),
+            }
+        client_id, client_secret, token_url, scope = oauth2_parts
         access_token = await get_cached_token(alias, client_id, client_secret, token_url, scope)
         request_headers["Authorization"] = f"Bearer {access_token}"
     elif entry.auth_type == "api_key_header":
@@ -121,11 +151,11 @@ async def vault_http_request(
             request_headers["X-API-Key"] = entry.secret
 
     # 6. Make the request (redirects checked per-hop against allowlist)
-    MAX_REDIRECTS = 10
+    max_redirects = 10
     current_url = url
     try:
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
-            for redirect_hop in range(MAX_REDIRECTS + 1):
+            for redirect_hop in range(max_redirects + 1):
                 response = await client.request(
                     method=method.upper(),
                     url=current_url,
@@ -145,6 +175,7 @@ async def vault_http_request(
 
                 # Resolve relative redirects
                 from urllib.parse import urljoin
+
                 next_url = urljoin(current_url, location)
 
                 if not check_url_allowed(entry, next_url):
@@ -177,11 +208,16 @@ async def vault_http_request(
                 # Exceeded max redirects
                 return {
                     "status": "error",
-                    "message": f"Too many redirects ({MAX_REDIRECTS}) for '{url}'",
+                    "message": f"Too many redirects ({max_redirects}) for '{url}'",
                 }
 
-        # 7. Sanitize the response
-        response_text = response.text
+        # 7. Enforce response size limit and sanitize
+        if len(response.content) > MAX_RESPONSE_BYTES:
+            response_text = response.content[:MAX_RESPONSE_BYTES].decode("utf-8", errors="replace")
+            mb = MAX_RESPONSE_BYTES // (1024 * 1024)
+            response_text += f"\n\n[TRUNCATED -- response exceeded {mb} MB]"
+        else:
+            response_text = response.text
         clean_text = sanitize_response(response_text, entry)
         clean_text = sanitize_content(clean_text)
 
@@ -212,6 +248,7 @@ async def vault_http_request(
         error_msg = sanitize_response(error_msg, entry)
         # Further strip anything that looks like a token or key
         import re as _re
+
         error_msg = _re.sub(
             r"(Bearer |Basic |Token |Authorization: )\S+",
             r"\1[REDACTED]",

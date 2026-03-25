@@ -12,14 +12,18 @@ password — only the resulting page content.
 
 from __future__ import annotations
 
-import asyncio
 import time
 from typing import Any
 
 from coffer_mcp.audit import AuditLogger
-from coffer_mcp.security import sanitize_response, sanitize_content, check_url_allowed
+from coffer_mcp.security import (
+    check_url_allowed,
+    sanitize_content,
+    sanitize_response,
+    validate_css_selector,
+    validate_wait_after_login,
+)
 from coffer_mcp.store import EncryptedStore
-
 
 # Module-level browser context cache (keyed by alias)
 _contexts: dict[str, dict[str, Any]] = {}
@@ -33,6 +37,7 @@ async def _ensure_browser():
     global _browser, _playwright
     if "_browser" not in globals() or _browser is None:
         from playwright.async_api import async_playwright
+
         _playwright = await async_playwright().start()
         _browser = await _playwright.chromium.launch(headless=True)
     return _browser
@@ -67,6 +72,19 @@ async def browser_web_login(
     Returns:
         Dict with status and page title (no credentials exposed).
     """
+    # 0. Validate inputs
+    for sel_name, sel_val in [
+        ("username_selector", username_selector),
+        ("password_selector", password_selector),
+        ("submit_selector", submit_selector),
+    ]:
+        if validate_css_selector(sel_val) is None:
+            return {
+                "status": "error",
+                "message": f"Invalid or suspicious CSS selector for {sel_name}: '{sel_val}'",
+            }
+    wait_after_login = validate_wait_after_login(wait_after_login)
+
     # 1. Resolve credential
     try:
         entry = store.get(alias)
@@ -172,10 +190,15 @@ async def browser_web_fetch(
     session_age = time.time() - ctx.get("created_at", 0)
     if session_age > SESSION_TIMEOUT:
         await browser_web_logout(alias)
-        audit.log("browser_fetch.failed", alias, "failure", {
-            "reason": "session_expired",
-            "age_seconds": int(session_age),
-        })
+        audit.log(
+            "browser_fetch.failed",
+            alias,
+            "failure",
+            {
+                "reason": "session_expired",
+                "age_seconds": int(session_age),
+            },
+        )
         return {
             "status": "error",
             "message": (
@@ -190,9 +213,15 @@ async def browser_web_fetch(
     try:
         entry = store.get(alias)
         if not check_url_allowed(entry, url):
-            audit.log("browser_fetch.failed", alias, "failure", {
-                "reason": "url_not_allowed", "url": url,
-            })
+            audit.log(
+                "browser_fetch.failed",
+                alias,
+                "failure",
+                {
+                    "reason": "url_not_allowed",
+                    "url": url,
+                },
+            )
             return {
                 "status": "error",
                 "message": f"URL '{url}' is not in the allowlist for credential '{alias}'",
@@ -205,7 +234,12 @@ async def browser_web_fetch(
         await page.wait_for_timeout(6000)  # let SPA hydrate
 
         # Dismiss cookie banners if present
-        for sel in ["#onetrust-accept-btn-handler", "button:has-text('Accept All')", "button:has-text('Essential only')"]:
+        cookie_selectors = [
+            "#onetrust-accept-btn-handler",
+            "button:has-text('Accept All')",
+            "button:has-text('Essential only')",
+        ]
+        for sel in cookie_selectors:
             try:
                 btn = await page.query_selector(sel)
                 if btn:
@@ -230,8 +264,8 @@ async def browser_web_fetch(
             rendered_text = await page.inner_text("body")
 
             # Also try readability for comparison
-            from readability import Document
             import html2text
+            from readability import Document
 
             doc = Document(raw_html)
             title = doc.title() or page_title
