@@ -1,5 +1,7 @@
 # Coffer MCP
 
+[![CI](https://github.com/annawhooo/coffer-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/annawhooo/coffer-mcp/actions/workflows/ci.yml)
+
 *The strongbox between your secrets and your AI.*
 
 **Credential vault for LLM agents.** Your AI assistant uses passwords and API keys — but never sees them.
@@ -19,7 +21,7 @@ You (one-time setup)
   │
   ▼
 Coffer MCP Server (runs locally)
-  ├── Encrypted vault (AES-256-GCM)
+  ├── Encrypted vault (AES-256-GCM with AAD)
   ├── coffer_list         → returns aliases only
   ├── coffer_http_request → injects auth, returns clean response
   ├── coffer_test         → verifies credential works (pass/fail)
@@ -110,6 +112,7 @@ coffer add --expires 90d # Add with 90-day expiry
 coffer list              # List credentials (no secrets, shows expiry)
 coffer test <alias>      # Test a credential works (HEAD request)
 coffer rotate <alias>    # Rotate the secret for a credential
+coffer rekey             # Re-encrypt all credentials with a new passphrase
 coffer export <file>     # Encrypted backup to file
 coffer import <file>     # Restore from encrypted backup
 coffer remove <alias>    # Remove a credential
@@ -122,17 +125,36 @@ coffer serve             # Start MCP server (for debugging)
 
 See [SECURITY.md](SECURITY.md) for the full threat model.
 
-**Key protections:**
-- AES-256-GCM encryption at rest (per-entry unique nonces)
-- Master key stored in OS keyring (Windows Credential Manager / macOS Keychain)
+**Encryption & storage:**
+- AES-256-GCM encryption at rest with per-entry unique nonces
+- Associated Authenticated Data (AAD) binds each ciphertext to its alias, preventing copy-paste attacks between entries
+- Master key stored in OS keyring (Windows Credential Manager / macOS Keychain / Linux Secret Service)
 - Random PBKDF2 salt per user (stored with key in keyring)
+- Key rotation via `coffer rekey` — re-encrypts all credentials atomically with a new passphrase
+
+**Access control:**
 - URL allowlisting with strict domain matching
 - Per-hop redirect checking against allowlist
+- HTTP method validation (GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS)
+- CSS selector validation to prevent injection in web scraping
+- OAuth2 pipe-delimited format validation
+- Response body size cap (10 MB) to prevent memory exhaustion
+
+**Data protection:**
 - Response sanitization scrubs credentials from bodies and error messages
+- Expanded scrubbing catches base64-encoded secrets, Bearer tokens, and URL-embedded credentials
 - Prompt injection defense (strips HTML comments, hidden elements, invisible unicode)
 - Browser session auto-expiry (30 minutes)
-- HMAC-SHA-256 audit chain (keyed to master key)
 - Credential expiry with automatic enforcement
+
+**Integrity & auditability:**
+- HMAC-SHA-256 audit chain (keyed to master key) — detects tampering
+- Warning emitted when audit logger runs without HMAC key
+- Atomic backup writes (write-to-temp + rename) prevent corruption on crash
+
+**Concurrency:**
+- Cross-platform file locking (fcntl on Unix, Win32 LockFileEx on Windows) for credential store and audit log
+- Thread-safe global state for sessions, token cache, and store/audit initialization
 
 ## Supported Auth Types
 
@@ -151,6 +173,17 @@ Credentials can have an optional expiry date. When set:
 - Expired credentials are **blocked** from use — Claude gets a clear error
 - `coffer test` checks expiry before making requests
 
+## Key Rotation
+
+If your master passphrase is compromised, rotate it without losing any credentials:
+
+```bash
+coffer rekey
+# Enter current passphrase → enter new passphrase → confirm
+# All credentials are re-encrypted atomically
+# Old vault is untouched until migration completes
+```
+
 ## Backup & Restore
 
 ```bash
@@ -164,16 +197,32 @@ coffer import ~/coffer-backup-2026.enc
 coffer import ~/coffer-backup-2026.enc --overwrite
 ```
 
-Backups are AES-256-GCM encrypted with a separate passphrase. Safe to store in cloud storage.
+Backups are AES-256-GCM encrypted with a separate passphrase. Writes are atomic (temp file + rename) so a crash mid-export won't corrupt your backup. Safe to store in cloud storage.
 
 ## File Layout
 
 ```
 ~/.coffer/
-├── credentials.json    # Encrypted credentials (AES-256-GCM)
+├── credentials.json    # Encrypted credentials (AES-256-GCM + AAD)
 ├── audit.jsonl         # Append-only audit log with HMAC chain
 └── .master-key         # Auto-generated master key (fallback only)
 ```
+
+## Development
+
+```bash
+# Install with dev dependencies
+pip install -e ".[dev]"
+
+# Run tests (142 tests)
+pytest
+
+# Lint
+ruff check src/ tests/
+ruff format --check src/ tests/
+```
+
+CI runs automatically on every push and PR — lint + test matrix across Python 3.10-3.13 on Ubuntu, Windows, and macOS.
 
 ## Requirements
 
