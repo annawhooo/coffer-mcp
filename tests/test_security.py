@@ -79,6 +79,7 @@ class TestResponseSanitization:
     def test_basic_auth_scrubbed(self):
         """Base64-encoded basic auth should be scrubbed."""
         import base64
+
         entry = CredentialEntry(
             alias="basic",
             auth_type="basic_auth",

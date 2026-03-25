@@ -43,6 +43,7 @@ class TestHmacAuditChain:
 
         # Tamper: change the alias and recompute bare SHA-256 (no HMAC key)
         import hashlib
+
         with open(audit_hmac._path, "r") as f:
             lines = f.readlines()
 

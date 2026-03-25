@@ -5,8 +5,8 @@ import time
 
 import pytest
 
-from coffer_mcp.store.encrypted_store import CredentialEntry, EncryptedStore
 from coffer_mcp.store.backup import export_vault, import_vault
+from coffer_mcp.store.encrypted_store import CredentialEntry, EncryptedStore
 
 
 @pytest.fixture
@@ -22,21 +22,35 @@ def store(master_key, tmp_path):
 @pytest.fixture
 def populated_store(store):
     """Store with 3 credentials of different types."""
-    store.add(CredentialEntry(
-        alias="api-1", auth_type="bearer_token",
-        secret="token-111", description="API one",
-        allowed_urls=["https://api1.example.com/*"],
-    ))
-    store.add(CredentialEntry(
-        alias="web-1", auth_type="web_login",
-        username="user@test.com", secret="pass123",
-        description="Web login", expires_at=time.time() + 86400,
-    ))
-    store.add(CredentialEntry(
-        alias="basic-1", auth_type="basic_auth",
-        username="admin", secret="admin-pass",
-        description="Basic auth", allowed_methods=["GET", "POST"],
-    ))
+    store.add(
+        CredentialEntry(
+            alias="api-1",
+            auth_type="bearer_token",
+            secret="token-111",
+            description="API one",
+            allowed_urls=["https://api1.example.com/*"],
+        )
+    )
+    store.add(
+        CredentialEntry(
+            alias="web-1",
+            auth_type="web_login",
+            username="user@test.com",
+            secret="pass123",
+            description="Web login",
+            expires_at=time.time() + 86400,
+        )
+    )
+    store.add(
+        CredentialEntry(
+            alias="basic-1",
+            auth_type="basic_auth",
+            username="admin",
+            secret="admin-pass",
+            description="Basic auth",
+            allowed_methods=["GET", "POST"],
+        )
+    )
     return store
 
 
@@ -78,7 +92,8 @@ class TestExportImport:
         new_store = EncryptedStore(master_key, tmp_path / "new_creds.json")
         result = import_vault(new_store, "wrong-pass", backup_path)
         assert result["status"] == "error"
-        assert "passphrase" in result["message"].lower() or "decryption" in result["message"].lower()
+        msg = result["message"].lower()
+        assert "passphrase" in msg or "decryption" in msg
 
     def test_skip_duplicates(self, populated_store, tmp_path):
         """Import without overwrite should skip existing credentials."""
