@@ -590,3 +590,36 @@ Prioritized by severity and implementation effort.
 | TB-4: Server <-> API | S-4.1 | T-4.1, T-4.2 | R-4.1 | I-4.1, I-4.2, I-4.3 | D-4.1, D-4.2 | E-4.1 |
 | TB-5: Server <-> Filesystem | S-5.1 | T-5.1, T-5.2, T-5.3 | -- | I-5.1, I-5.2, I-5.3, I-5.4 | D-5.1, D-5.2 | E-5.1 |
 | TB-6: Server <-> Browser | S-6.1 | T-6.1, T-6.2 | R-6.1 | I-6.1, I-6.2, I-6.3 | D-6.1, D-6.2 | E-6.1, E-6.2 |
+
+---
+
+## Appendix A: Secret Memory Handling (added 2026-03-25)
+
+### Mitigations implemented (`src/coffer_mcp/secmem.py`)
+
+| Control | What it does | Scope |
+|---------|-------------|-------|
+| **SecureBuffer** | `bytearray` wrapper that zeros contents on close/`__del__`. Used in `_decrypt()` to zero the raw plaintext as soon as JSON fields are extracted. | Decryption path |
+| **wipe_entry()** | Zeros `secret` and `username` fields on `CredentialEntry` after auth headers/form data are built. Reduces the window where the entry holds plaintext. | `vault_http_request`, `vault_web_login` |
+| **harden_process()** | Called at server startup. Disables core dumps (`RLIMIT_CORE=0` on Linux) and locks memory pages (`mlockall` on Linux, `SetProcessWorkingSetSize` on Windows) to prevent secrets from being written to swap/dump files. | Process-level |
+
+### Residual risks (documented, not fully mitigable in Python)
+
+| Risk | Why it persists | Severity | Path to full mitigation |
+|------|----------------|----------|------------------------|
+| **Python `str` immutability** | `json.loads()` creates immutable `str` objects for the `secret` and `username` fields. These copies cannot be zeroed — they persist in the garbage collector until the memory is overwritten by other allocations. | Medium | Move secret injection to a short-lived subprocess (option 2 in architecture notes). The OS guarantees memory cleanup when the subprocess exits. |
+| **String interning** | CPython may intern short strings, keeping them in a global table indefinitely. Secrets that happen to be short ASCII strings (e.g., "admin") could be interned. | Low | Subprocess isolation, or a C extension that stores secrets in `mmap`'d pages with `mlock`. |
+| **HTTP header dict** | After `wipe_entry()`, the secret still exists in the `request_headers` dict (as the Authorization header value). This reference is released when the `httpx` request completes and the dict goes out of scope, but timing is GC-dependent. | Medium | Subprocess isolation — the entire HTTP request happens in a process that exits immediately after. |
+| **Master key in AESGCM** | The 32-byte master key is held inside the `AESGCM` object for the lifetime of the `EncryptedStore`. It cannot be zeroed without replacing the object. | Medium | Re-derive the key from keyring on each operation and discard the `AESGCM` object after use (performance tradeoff). |
+| **macOS mlock** | `mlockall()` typically requires root on macOS, so memory locking is not applied. Secrets could be written to swap. | Low | Users can enable encrypted swap (default on modern macOS), or run the server with elevated privileges. |
+
+### What this means in practice
+
+For the vast majority of threat scenarios (remote attackers, prompt injection, network MITM), these memory handling limitations are **not exploitable** — the attacker would need local access to the machine's process memory, swap file, or core dumps.
+
+The mitigations we've implemented (zeroing buffers, wiping entries, disabling core dumps, locking memory) close the most practical attack vectors. The residual risks require either:
+- Physical access to the machine
+- Root/admin access to read another process's memory
+- Forensic analysis of swap files on an unencrypted disk
+
+For environments where these threats are relevant (e.g., shared hosting, compliance-sensitive workloads), the recommended path is **subprocess isolation** (see architecture notes in `docs/NEXT_STEPS.md`).

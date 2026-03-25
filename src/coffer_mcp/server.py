@@ -33,6 +33,7 @@ from coffer_mcp.browser.playwright_bridge import (
 from coffer_mcp.browser.playwright_bridge import (
     browser_web_logout as _browser_web_logout,
 )
+from coffer_mcp.secmem import harden_process
 from coffer_mcp.store import EncryptedStore, get_master_key
 from coffer_mcp.tools.vault_http_request import vault_http_request as _vault_http_request
 from coffer_mcp.tools.vault_list import vault_list as _vault_list
@@ -279,6 +280,9 @@ def coffer_audit(alias: str = "", limit: int = 20) -> str:
 
 def main():
     """Run the MCP server via stdio transport."""
+    # Apply process-level memory protections before handling any secrets:
+    # disables core dumps and locks memory pages to prevent swap.
+    harden_process()
     mcp.run(transport="stdio")
 
 

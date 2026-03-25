@@ -14,6 +14,7 @@ from typing import Any
 import httpx
 
 from coffer_mcp.audit import AuditLogger
+from coffer_mcp.secmem import wipe_entry
 from coffer_mcp.security import (
     MAX_RESPONSE_BYTES,
     check_method_allowed,
@@ -151,6 +152,11 @@ async def vault_http_request(
             request_headers[header_name.strip()] = header_value.strip()
         else:
             request_headers["X-API-Key"] = entry.secret
+
+    # 5b. Wipe the decrypted secret from the entry now that headers are built.
+    # The secret is still in the header dict (needed for the request) but
+    # no longer in the CredentialEntry object, reducing the exposure window.
+    wipe_entry(entry)
 
     # 6. Make the request (redirects checked per-hop against allowlist)
     max_redirects = 10

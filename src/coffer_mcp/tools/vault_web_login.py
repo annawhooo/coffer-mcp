@@ -22,6 +22,7 @@ import httpx
 from readability import Document
 
 from coffer_mcp.audit import AuditLogger
+from coffer_mcp.secmem import wipe_entry
 from coffer_mcp.security import MAX_RESPONSE_BYTES, check_url_allowed, sanitize_response
 from coffer_mcp.store import EncryptedStore
 
@@ -89,6 +90,9 @@ async def vault_web_login(
     }
     if extra_form_data:
         form_data.update(extra_form_data)
+
+    # 3b. Wipe the entry now that form data is built
+    wipe_entry(entry)
 
     # 4. Create a persistent session and login
     try:
