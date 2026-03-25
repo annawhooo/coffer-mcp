@@ -49,32 +49,37 @@ def export_vault(
     entries = []
     for a in aliases:
         entry = store.get(a["alias"])
-        entries.append({
-            "alias": entry.alias,
-            "auth_type": entry.auth_type,
-            "username": entry.username,
-            "secret": entry.secret,
-            "allowed_urls": entry.allowed_urls,
-            "allowed_methods": entry.allowed_methods,
-            "description": entry.description,
-            "created_at": entry.created_at,
-            "rotated_at": entry.rotated_at,
-            "expires_at": entry.expires_at,
-        })
+        entries.append(
+            {
+                "alias": entry.alias,
+                "auth_type": entry.auth_type,
+                "username": entry.username,
+                "secret": entry.secret,
+                "allowed_urls": entry.allowed_urls,
+                "allowed_methods": entry.allowed_methods,
+                "description": entry.description,
+                "created_at": entry.created_at,
+                "rotated_at": entry.rotated_at,
+                "expires_at": entry.expires_at,
+            }
+        )
 
     salt = os.urandom(16)
     key = _derive_backup_key(passphrase, salt)
     gcm = AESGCM(key)
     nonce = os.urandom(12)
 
-    payload = json.dumps({
-        "magic": BACKUP_MAGIC,
-        "version": BACKUP_VERSION,
-        "exported_at": time.time(),
-        "credentials": entries,
-    }).encode("utf-8")
+    payload = json.dumps(
+        {
+            "magic": BACKUP_MAGIC,
+            "version": BACKUP_VERSION,
+            "exported_at": time.time(),
+            "credentials": entries,
+        }
+    ).encode("utf-8")
 
-    ciphertext = gcm.encrypt(nonce, payload, None)
+    aad = f"{BACKUP_MAGIC}:v{BACKUP_VERSION}".encode("utf-8")
+    ciphertext = gcm.encrypt(nonce, payload, aad)
 
     backup_data = {
         "magic": BACKUP_MAGIC,
@@ -85,7 +90,8 @@ def export_vault(
         "credential_count": len(entries),
     }
     output_path.write_text(
-        json.dumps(backup_data, indent=2), encoding="utf-8",
+        json.dumps(backup_data, indent=2),
+        encoding="utf-8",
     )
     return {
         "status": "ok",
@@ -125,13 +131,18 @@ def import_vault(
     key = _derive_backup_key(passphrase, salt)
     gcm = AESGCM(key)
 
+    aad = f"{BACKUP_MAGIC}:v{raw.get('version', BACKUP_VERSION)}".encode("utf-8")
     try:
-        plaintext = gcm.decrypt(nonce, ciphertext, None)
+        plaintext = gcm.decrypt(nonce, ciphertext, aad)
     except Exception:
-        return {
-            "status": "error",
-            "message": "Decryption failed. Wrong passphrase?",
-        }
+        # Fall back to legacy no-AAD for backups created before AAD was added
+        try:
+            plaintext = gcm.decrypt(nonce, ciphertext, None)
+        except Exception:
+            return {
+                "status": "error",
+                "message": "Decryption failed. Wrong passphrase?",
+            }
 
     data = json.loads(plaintext.decode("utf-8"))
     entries = data.get("credentials", [])
@@ -156,8 +167,26 @@ def import_vault(
         )
         try:
             if overwrite:
-                store.remove(alias)  # Remove if exists
-            store.add(entry)
+                # Save the old entry before removing so we can roll back
+                old_entry: CredentialEntry | None = None
+                try:
+                    old_entry = store.get(alias)
+                except KeyError:
+                    pass
+                if old_entry is not None:
+                    store.remove(alias)
+                try:
+                    store.add(entry)
+                except Exception:
+                    # Roll back: restore the old credential if add failed
+                    if old_entry is not None:
+                        try:
+                            store.add(old_entry)
+                        except Exception:
+                            pass  # Best-effort restore
+                    raise
+            else:
+                store.add(entry)
             imported += 1
         except ValueError:
             # Duplicate alias and overwrite=False

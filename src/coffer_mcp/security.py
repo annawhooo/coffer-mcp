@@ -1,6 +1,6 @@
 """
 Security utilities for URL allowlist enforcement, response sanitization,
-and response content safety.
+input validation, and response content safety.
 """
 
 from __future__ import annotations
@@ -10,7 +10,6 @@ import re
 from urllib.parse import urlparse
 
 from coffer_mcp.store.encrypted_store import CredentialEntry
-
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -22,16 +21,119 @@ from coffer_mcp.store.encrypted_store import CredentialEntry
 # into the LLM context.
 MAX_RESPONSE_LENGTH = 200_000
 
+# Maximum response body size in bytes to read from the network.
+# Prevents memory exhaustion from a malicious server sending huge payloads.
+MAX_RESPONSE_BYTES = 10 * 1024 * 1024  # 10 MB
+
+# Valid HTTP methods
+VALID_HTTP_METHODS = frozenset({"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"})
+
+# Max wait time for wait_after_login (60 seconds)
+MAX_WAIT_AFTER_LOGIN_MS = 60_000
+
 # Patterns that indicate embedded prompt-injection attempts in response
 # bodies. These are stripped before the response reaches the LLM.
 _INJECTION_PATTERNS = [
     # HTML comments (commonly used to hide instructions)
     re.compile(r"<!--.*?-->", re.DOTALL),
     # Hidden HTML elements
-    re.compile(r"<[^>]*(?:display\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0)[^>]*>.*?</[^>]+>", re.DOTALL | re.IGNORECASE),
+    re.compile(
+        r"<[^>]*(?:display\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0)"
+        r"[^>]*>.*?</[^>]+>",
+        re.DOTALL | re.IGNORECASE,
+    ),
     # Zero-width / invisible unicode characters used to smuggle text
     re.compile(r"[\u200b\u200c\u200d\u2060\ufeff\u00ad]+"),
 ]
+
+
+# ---------------------------------------------------------------------------
+# Input validation
+# ---------------------------------------------------------------------------
+
+
+def validate_http_method(method: str) -> str | None:
+    """
+    Validate and normalize an HTTP method string.
+
+    Returns the uppercased method if valid, or None if invalid.
+    """
+    normalized = method.strip().upper()
+    if normalized in VALID_HTTP_METHODS:
+        return normalized
+    return None
+
+
+def validate_wait_after_login(wait_ms: int) -> int:
+    """Clamp wait_after_login to a safe range [0, MAX_WAIT_AFTER_LOGIN_MS]."""
+    return max(0, min(wait_ms, MAX_WAIT_AFTER_LOGIN_MS))
+
+
+def validate_css_selector(selector: str) -> str | None:
+    """
+    Basic validation of a CSS selector string.
+
+    Rejects selectors containing characters that could indicate injection
+    (JavaScript URIs, script tags, unbalanced quotes). Returns the
+    cleaned selector or None if suspicious.
+    """
+    if not selector or not selector.strip():
+        return None
+    s = selector.strip()
+    # Reject anything that looks like script injection
+    suspicious = [
+        "<script",
+        "javascript:",
+        "onerror=",
+        "onload=",
+        "expression(",
+        "url(",
+        "eval(",
+        "import(",
+    ]
+    lower = s.lower()
+    for pattern in suspicious:
+        if pattern in lower:
+            return None
+    # Reject unbalanced quotes
+    if s.count('"') % 2 != 0 or s.count("'") % 2 != 0:
+        return None
+    return s
+
+
+def validate_oauth2_secret(username: str, secret: str) -> tuple[str, str, str, str] | None:
+    """
+    Parse and validate OAuth2 client_credentials format.
+
+    Expected formats:
+        username: "client_id|client_secret"  (or just client_id)
+        secret: "token_url|scope"  (or just token_url)
+
+    Returns (client_id, client_secret, token_url, scope) or None if invalid.
+    """
+    if not secret:
+        return None
+
+    parts = secret.split("|", 1)
+    token_url = parts[0].strip()
+    scope = parts[1].strip() if len(parts) > 1 else ""
+
+    if not token_url or not token_url.startswith(("https://", "http://")):
+        return None
+
+    id_parts = username.split("|", 1)
+    client_id = id_parts[0].strip()
+    client_secret = id_parts[1].strip() if len(id_parts) > 1 else ""
+
+    if not client_id:
+        return None
+
+    return client_id, client_secret, token_url, scope
+
+
+# ---------------------------------------------------------------------------
+# URL / method allowlist
+# ---------------------------------------------------------------------------
 
 
 def check_url_allowed(entry: CredentialEntry, url: str) -> bool:
@@ -57,6 +159,7 @@ def check_url_allowed(entry: CredentialEntry, url: str) -> bool:
     parsed = urlparse(url)
     # Normalize: resolve path traversal attempts
     from posixpath import normpath
+
     normalized_path = normpath(parsed.path) if parsed.path else "/"
 
     for pattern in entry.allowed_urls:
@@ -98,7 +201,11 @@ def sanitize_response(response_text: str, entry: CredentialEntry) -> str:
     """
     Scrub any leaked credentials from a response before returning to the LLM.
 
-    Checks for the secret, username, and any partial matches.
+    Checks for the secret in multiple representations:
+    - Literal plaintext
+    - URL-encoded
+    - Base64-encoded (standalone and as Basic auth)
+    - Bearer/token patterns (headers, query params, JSON values)
 
     Args:
         response_text: The raw response body.
@@ -109,24 +216,41 @@ def sanitize_response(response_text: str, entry: CredentialEntry) -> str:
     """
     sanitized = response_text
 
-    # Scrub the secret itself
-    if entry.secret and len(entry.secret) > 3:
-        sanitized = sanitized.replace(entry.secret, "[REDACTED]")
+    if not entry.secret or len(entry.secret) <= 3:
+        return sanitized
 
-    # Scrub URL-encoded version of the secret
-    if entry.secret:
-        from urllib.parse import quote
-        encoded_secret = quote(entry.secret, safe="")
-        if encoded_secret != entry.secret:
-            sanitized = sanitized.replace(encoded_secret, "[REDACTED]")
+    # 1. Scrub the literal secret
+    sanitized = sanitized.replace(entry.secret, "[REDACTED]")
 
-    # Scrub base64-encoded version of common auth patterns
-    if entry.username and entry.secret:
-        import base64
-        basic_auth = base64.b64encode(
-            f"{entry.username}:{entry.secret}".encode()
-        ).decode()
+    # 2. Scrub URL-encoded version
+    from urllib.parse import quote
+
+    encoded_secret = quote(entry.secret, safe="")
+    if encoded_secret != entry.secret:
+        sanitized = sanitized.replace(encoded_secret, "[REDACTED]")
+
+    # 3. Scrub base64-encoded secret (standalone)
+    import base64
+
+    b64_secret = base64.b64encode(entry.secret.encode()).decode()
+    sanitized = sanitized.replace(b64_secret, "[REDACTED]")
+
+    # 4. Scrub base64-encoded Basic auth (username:password)
+    if entry.username:
+        basic_auth = base64.b64encode(f"{entry.username}:{entry.secret}".encode()).decode()
         sanitized = sanitized.replace(basic_auth, "[REDACTED]")
+
+    # 5. Scrub Bearer/token patterns that reference the secret
+    # Handles: "Bearer <secret>", "token=<secret>", "access_token=<secret>"
+    escaped = re.escape(entry.secret)
+    _token_patterns = [
+        r"Bearer\s+" + escaped,
+        r"token[\"']?\s*[:=]\s*[\"']?" + escaped,
+        r"access_token[\"']?\s*[:=]\s*[\"']?" + escaped,
+        r"api[_-]?key[\"']?\s*[:=]\s*[\"']?" + escaped,
+    ]
+    for pattern in _token_patterns:
+        sanitized = re.sub(pattern, "[REDACTED]", sanitized, flags=re.IGNORECASE)
 
     return sanitized
 
