@@ -8,10 +8,10 @@
 
 | # | Item | Status | Effort |
 |---|------|--------|--------|
-| 1 | **Formal threat model (STRIDE on MCP boundary)** — structured analysis of trust boundaries, attack surfaces, and the novel LLM↔credential-store interface | TODO | 1-2 days |
-| 2 | **Dependency supply chain** — pin versions with hashes, add pip-audit to CI, evaluate whether readability-lxml/html2text C extensions are worth the attack surface | TODO | Half day |
+| 1 | **Formal threat model (STRIDE on MCP boundary)** — structured analysis of trust boundaries, attack surfaces, and the novel LLM↔credential-store interface | ✅ DONE | 1-2 days |
+| 2 | **Dependency supply chain** — pin versions with hashes, add pip-audit to CI, evaluate whether readability-lxml/html2text C extensions are worth the attack surface | ✅ DONE | Half day |
 | 3 | **Memory handling of secrets** — decrypted secrets in Python strings are never zeroed; evaluate subprocess isolation for secret injection | TODO | Evaluate |
-| 4 | **MCP trust boundary hardening** — prompt injection in fetched pages could instruct Claude to exfiltrate credentials via coffer_http_request; URL allowlist is the only defense | TODO | Evaluate |
+| 4 | **MCP trust boundary hardening** — prompt injection in fetched pages could instruct Claude to exfiltrate credentials via coffer_http_request; URL allowlist is the only defense | ✅ DONE | Evaluate |
 
 ## Tier 2 — Architectural maturity
 
@@ -20,7 +20,7 @@
 | 5 | **End-to-end MCP integration tests** — start server, send tools/call requests, verify responses at the protocol boundary | TODO | 1-2 days |
 | 6 | **Property-based testing / fuzzing** — Hypothesis for encrypt/decrypt round-trip, URL allowlist invariants, backup import crash resistance, CSS selector fuzzing | TODO | 1-2 days |
 | 7 | **Mutation testing** — mutmut to verify tests actually catch bugs (mutation kill rate) | TODO | Half day |
-| 8 | **File permissions hardening** — set 0600 on credentials.json and audit.jsonl on creation; Windows ACLs for current user only | TODO | 1 hour |
+| 8 | **File permissions hardening** — set 0600 on credentials.json and audit.jsonl on creation; Windows ACLs for current user only | ✅ DONE | 1 hour |
 
 ## Tier 3 — Enterprise readiness
 
@@ -42,3 +42,9 @@
 | CI/CD: GitHub Actions lint + 12-job test matrix | 2026-03-25 |
 | README update | 2026-03-25 |
 | Expanded test suite (51 tests — Unicode/IDN, concurrency, corrupted backup, edge cases) | 2026-03-25 |
+| File permissions hardening (0600/0700 on store, audit, backups) | 2026-03-25 |
+| Dependency supply chain: pip-audit in CI + pinned lockfile | 2026-03-25 |
+| STRIDE threat model (docs/THREAT_MODEL.md) | 2026-03-25 |
+| Fix #1: login_url allowlist enforcement in web_login/web_fetch | 2026-03-25 |
+| Fix #2: OAuth2 access token sanitization from responses | 2026-03-25 |
+| MCP trust boundary: URL allowlist on all credential-using tools | 2026-03-25 |
