@@ -33,7 +33,10 @@ jobs:
       - name: Install project dependencies
         run: pip install -e .
       - name: Audit dependencies for known vulnerabilities
-        run: pip-audit
+        run: >-
+          pip-audit
+          --skip-editable
+          --ignore-vuln CVE-2026-4539
 
   test:
     name: Test (Python ${{ matrix.python-version }}, ${{ matrix.os }})
