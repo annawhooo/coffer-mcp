@@ -18,6 +18,7 @@ from typing import Any
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+from coffer_mcp.permissions import secure_file
 from coffer_mcp.store.encrypted_store import CredentialEntry, EncryptedStore
 
 BACKUP_VERSION = 1
@@ -93,6 +94,7 @@ def export_vault(
         json.dumps(backup_data, indent=2),
         encoding="utf-8",
     )
+    secure_file(output_path)
     return {
         "status": "ok",
         "count": len(entries),

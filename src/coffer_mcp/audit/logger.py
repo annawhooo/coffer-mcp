@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from coffer_mcp.filelock import FileLock
+from coffer_mcp.permissions import secure_directory, secure_file
 
 
 @dataclass
@@ -46,8 +47,10 @@ class AuditLogger:
         self._warned_no_hmac = False
         self._lock = FileLock(self._path)
         self._path.parent.mkdir(parents=True, exist_ok=True)
+        secure_directory(self._path.parent)
         if not self._path.exists():
             self._path.touch()
+        secure_file(self._path)
         self._event_counter = self._count_events()
 
     def log(

@@ -19,6 +19,7 @@ from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from coffer_mcp.filelock import FileLock
+from coffer_mcp.permissions import secure_directory, secure_file
 
 # ---------------------------------------------------------------------------
 # Data models
@@ -94,6 +95,7 @@ class EncryptedStore:
         self._path = store_path or Path.home() / ".coffer" / "credentials.json"
         self._lock = FileLock(self._path)
         self._path.parent.mkdir(parents=True, exist_ok=True)
+        secure_directory(self._path.parent)
         with self._lock.acquire():
             if not self._path.exists():
                 self._write_blobs([])
@@ -291,8 +293,10 @@ class EncryptedStore:
             return []
 
     def _write_blobs(self, blobs: list[dict]) -> None:
-        """Write encrypted blobs to disk atomically."""
+        """Write encrypted blobs to disk atomically with secure permissions."""
         tmp_path = self._path.with_suffix(".tmp")
         with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(blobs, f, indent=2)
+        secure_file(tmp_path)
         tmp_path.replace(self._path)
+        secure_file(self._path)
