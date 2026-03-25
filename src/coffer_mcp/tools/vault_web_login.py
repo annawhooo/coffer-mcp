@@ -22,7 +22,7 @@ import httpx
 from readability import Document
 
 from coffer_mcp.audit import AuditLogger
-from coffer_mcp.security import MAX_RESPONSE_BYTES, sanitize_response
+from coffer_mcp.security import MAX_RESPONSE_BYTES, check_url_allowed, sanitize_response
 from coffer_mcp.store import EncryptedStore
 
 # Module-level session cache (keyed by alias), protected by an asyncio lock
@@ -69,7 +69,20 @@ async def vault_web_login(
             "message": f"Credential '{alias}' is type '{entry.auth_type}', not 'web_login'",
         }
 
-    # 2. Build login form data
+    # 2. Validate login_url against allowlist
+    if not check_url_allowed(entry, login_url):
+        audit.log(
+            "web_login.failed",
+            alias,
+            "failure",
+            {"reason": "url_not_allowed", "login_url": login_url},
+        )
+        return {
+            "status": "error",
+            "message": f"URL '{login_url}' is not in the allowed URLs for '{alias}'.",
+        }
+
+    # 3. Build login form data
     form_data = {
         username_field: entry.username,
         password_field: entry.secret,
@@ -77,7 +90,7 @@ async def vault_web_login(
     if extra_form_data:
         form_data.update(extra_form_data)
 
-    # 3. Create a persistent session and login
+    # 4. Create a persistent session and login
     try:
         client = httpx.AsyncClient(timeout=30.0, follow_redirects=True)
         response = await client.post(login_url, data=form_data)
@@ -153,7 +166,24 @@ async def vault_web_fetch(
             "message": f"No active session for '{alias}'. Call vault_web_login first.",
         }
 
-    # 2. Fetch the page
+    # 2. Validate fetch URL against allowlist
+    try:
+        entry = store.get(alias)
+        if not check_url_allowed(entry, url):
+            audit.log(
+                "web_fetch.failed",
+                alias,
+                "failure",
+                {"reason": "url_not_allowed", "url": url},
+            )
+            return {
+                "status": "error",
+                "message": f"URL '{url}' is not in the allowed URLs for '{alias}'.",
+            }
+    except KeyError:
+        pass  # Credential deleted after login — allow fetch to proceed
+
+    # 4. Fetch the page
     try:
         response = await client.get(url)
     except httpx.HTTPError as e:
@@ -177,7 +207,7 @@ async def vault_web_fetch(
             "message": f"Page returned status {response.status_code}",
         }
 
-    # 3. Enforce response size limit and extract content
+    # 5. Enforce response size limit and extract content
     if len(response.content) > MAX_RESPONSE_BYTES:
         raw_html = response.content[:MAX_RESPONSE_BYTES].decode("utf-8", errors="replace")
     else:
@@ -203,14 +233,14 @@ async def vault_web_fetch(
         title = "Raw HTML"
         markdown_content = raw_html
 
-    # 4. Sanitize (in case any credentials leaked into the page somehow)
+    # 6. Sanitize (in case any credentials leaked into the page somehow)
     try:
         entry = store.get(alias)
         markdown_content = sanitize_response(markdown_content, entry)
     except KeyError:
         pass
 
-    # 5. Audit
+    # 7. Audit
     audit.log(
         "web_fetch.success",
         alias,
