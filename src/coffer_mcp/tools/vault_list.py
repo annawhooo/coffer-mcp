@@ -7,10 +7,10 @@ The LLM never sees: passwords, tokens, API keys, usernames.
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from coffer_mcp.audit import AuditLogger
-import time
 from coffer_mcp.store import EncryptedStore
 
 
