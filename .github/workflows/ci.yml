@@ -30,8 +30,10 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install pip-audit
+      - name: Install project dependencies
+        run: pip install -e .
       - name: Audit dependencies for known vulnerabilities
-        run: pip-audit -r requirements.lock
+        run: pip-audit
 
   test:
     name: Test (Python ${{ matrix.python-version }}, ${{ matrix.os }})
