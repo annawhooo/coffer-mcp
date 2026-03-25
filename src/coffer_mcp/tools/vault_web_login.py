@@ -14,19 +14,21 @@ with Playwright can be used in a future version.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
+import html2text
 import httpx
 from readability import Document
-import html2text
 
 from coffer_mcp.audit import AuditLogger
-from coffer_mcp.security import sanitize_response
+from coffer_mcp.security import MAX_RESPONSE_BYTES, sanitize_response
 from coffer_mcp.store import EncryptedStore
 
-
-# Module-level session cache (keyed by alias)
+# Module-level session cache (keyed by alias), protected by an asyncio lock
+# to prevent races between concurrent login/fetch/logout calls.
 _sessions: dict[str, httpx.AsyncClient] = {}
+_sessions_lock = asyncio.Lock()
 
 
 async def vault_web_login(
@@ -93,8 +95,9 @@ async def vault_web_login(
                 "message": f"Login failed with status {response.status_code}",
             }
 
-        # Cache the authenticated session
-        _sessions[alias] = client
+        # Cache the authenticated session (lock protects concurrent access)
+        async with _sessions_lock:
+            _sessions[alias] = client
 
         audit.log(
             "web_login.success",
@@ -141,7 +144,8 @@ async def vault_web_fetch(
         Dict with status and page content (as markdown or HTML).
     """
     # 1. Check for active session
-    client = _sessions.get(alias)
+    async with _sessions_lock:
+        client = _sessions.get(alias)
     if client is None:
         audit.log("web_fetch.failed", alias, "failure", {"reason": "no_session"})
         return {
@@ -173,8 +177,11 @@ async def vault_web_fetch(
             "message": f"Page returned status {response.status_code}",
         }
 
-    # 3. Extract content
-    raw_html = response.text
+    # 3. Enforce response size limit and extract content
+    if len(response.content) > MAX_RESPONSE_BYTES:
+        raw_html = response.content[:MAX_RESPONSE_BYTES].decode("utf-8", errors="replace")
+    else:
+        raw_html = response.text
 
     if extract_content:
         try:
@@ -222,7 +229,8 @@ async def vault_web_fetch(
 
 async def vault_web_logout(alias: str) -> dict[str, Any]:
     """Close an authenticated web session."""
-    client = _sessions.pop(alias, None)
+    async with _sessions_lock:
+        client = _sessions.pop(alias, None)
     if client:
         await client.aclose()
         return {"status": "ok", "message": f"Session for '{alias}' closed"}

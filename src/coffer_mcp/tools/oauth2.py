@@ -8,14 +8,17 @@ cached in memory and refreshed automatically when they expire.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any
 
 import httpx
 
-
 # In-memory token cache: alias -> {"access_token": str, "expires_at": float}
+# Protected by an asyncio lock so two concurrent expired-token checks
+# don't both fire token requests to the OAuth2 server.
 _token_cache: dict[str, dict[str, Any]] = {}
+_token_lock = asyncio.Lock()
 
 
 async def get_oauth2_token(
@@ -68,19 +71,24 @@ async def get_cached_token(
     """
     Get a valid OAuth2 token, using cache if available.
     Automatically refreshes expired tokens.
+
+    Uses an asyncio lock so that concurrent callers waiting on an
+    expired token don't all fire separate token requests.
     """
-    cached = _token_cache.get(alias)
-    if cached and time.time() < cached["expires_at"]:
-        return cached["access_token"]
+    async with _token_lock:
+        cached = _token_cache.get(alias)
+        if cached and time.time() < cached["expires_at"]:
+            return cached["access_token"]
 
-    token_data = await get_oauth2_token(client_id, client_secret, token_url, scope)
-    _token_cache[alias] = token_data
-    return token_data["access_token"]
+        token_data = await get_oauth2_token(client_id, client_secret, token_url, scope)
+        _token_cache[alias] = token_data
+        return token_data["access_token"]
 
 
-def clear_token_cache(alias: str | None = None) -> None:
+async def clear_token_cache(alias: str | None = None) -> None:
     """Clear cached OAuth2 tokens."""
-    if alias:
-        _token_cache.pop(alias, None)
-    else:
-        _token_cache.clear()
+    async with _token_lock:
+        if alias:
+            _token_cache.pop(alias, None)
+        else:
+            _token_cache.clear()
