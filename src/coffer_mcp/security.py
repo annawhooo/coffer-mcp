@@ -197,7 +197,11 @@ def check_method_allowed(entry: CredentialEntry, method: str) -> bool:
     return method.upper() in [m.upper() for m in entry.allowed_methods]
 
 
-def sanitize_response(response_text: str, entry: CredentialEntry) -> str:
+def sanitize_response(
+    response_text: str,
+    entry: CredentialEntry,
+    extra_secrets: list[str] | None = None,
+) -> str:
     """
     Scrub any leaked credentials from a response before returning to the LLM.
 
@@ -210,49 +214,66 @@ def sanitize_response(response_text: str, entry: CredentialEntry) -> str:
     Args:
         response_text: The raw response body.
         entry: The credential entry whose secrets to scrub.
+        extra_secrets: Additional secrets to scrub (e.g., OAuth2 access
+            tokens that are not stored in the entry but were used at runtime).
 
     Returns:
         Sanitized response text with secrets replaced by [REDACTED].
     """
     sanitized = response_text
 
+    # Scrub any extra runtime secrets first (e.g., OAuth2 access tokens)
+    for secret in extra_secrets or []:
+        if secret and len(secret) > 3:
+            sanitized = _scrub_secret(sanitized, secret)
+
     if not entry.secret or len(entry.secret) <= 3:
         return sanitized
 
-    # 1. Scrub the literal secret
-    sanitized = sanitized.replace(entry.secret, "[REDACTED]")
+    sanitized = _scrub_secret(sanitized, entry.secret)
 
-    # 2. Scrub URL-encoded version
-    from urllib.parse import quote
-
-    encoded_secret = quote(entry.secret, safe="")
-    if encoded_secret != entry.secret:
-        sanitized = sanitized.replace(encoded_secret, "[REDACTED]")
-
-    # 3. Scrub base64-encoded secret (standalone)
-    import base64
-
-    b64_secret = base64.b64encode(entry.secret.encode()).decode()
-    sanitized = sanitized.replace(b64_secret, "[REDACTED]")
-
-    # 4. Scrub base64-encoded Basic auth (username:password)
+    # Also scrub base64-encoded Basic auth (username:password)
     if entry.username:
+        import base64
+
         basic_auth = base64.b64encode(f"{entry.username}:{entry.secret}".encode()).decode()
         sanitized = sanitized.replace(basic_auth, "[REDACTED]")
 
-    # 5. Scrub Bearer/token patterns that reference the secret
-    # Handles: "Bearer <secret>", "token=<secret>", "access_token=<secret>"
-    escaped = re.escape(entry.secret)
-    _token_patterns = [
+    return sanitized
+
+
+def _scrub_secret(text: str, secret: str) -> str:
+    """
+    Scrub a single secret from text in multiple representations.
+
+    Checks: literal, URL-encoded, base64-encoded, and Bearer/token patterns.
+    """
+    import base64
+    from urllib.parse import quote
+
+    # 1. Literal
+    text = text.replace(secret, "[REDACTED]")
+
+    # 2. URL-encoded
+    encoded = quote(secret, safe="")
+    if encoded != secret:
+        text = text.replace(encoded, "[REDACTED]")
+
+    # 3. Base64-encoded
+    b64 = base64.b64encode(secret.encode()).decode()
+    text = text.replace(b64, "[REDACTED]")
+
+    # 4. Bearer/token patterns
+    escaped = re.escape(secret)
+    for pattern in [
         r"Bearer\s+" + escaped,
         r"token[\"']?\s*[:=]\s*[\"']?" + escaped,
         r"access_token[\"']?\s*[:=]\s*[\"']?" + escaped,
         r"api[_-]?key[\"']?\s*[:=]\s*[\"']?" + escaped,
-    ]
-    for pattern in _token_patterns:
-        sanitized = re.sub(pattern, "[REDACTED]", sanitized, flags=re.IGNORECASE)
+    ]:
+        text = re.sub(pattern, "[REDACTED]", text, flags=re.IGNORECASE)
 
-    return sanitized
+    return text
 
 
 def sanitize_content(text: str) -> str:
