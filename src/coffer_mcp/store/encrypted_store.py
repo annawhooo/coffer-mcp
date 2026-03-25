@@ -11,15 +11,19 @@ from __future__ import annotations
 import json
 import os
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+from coffer_mcp.filelock import FileLock
 
 # ---------------------------------------------------------------------------
 # Data models
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class CredentialEntry:
@@ -69,6 +73,7 @@ class EncryptedBlob:
 # Store
 # ---------------------------------------------------------------------------
 
+
 class EncryptedStore:
     """
     Manages encrypted credentials on disk.
@@ -87,20 +92,23 @@ class EncryptedStore:
             raise ValueError("Master key must be exactly 32 bytes (256 bits)")
         self._gcm = AESGCM(master_key)
         self._path = store_path or Path.home() / ".coffer" / "credentials.json"
+        self._lock = FileLock(self._path)
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        if not self._path.exists():
-            self._write_blobs([])
+        with self._lock.acquire():
+            if not self._path.exists():
+                self._write_blobs([])
 
     # -- public API ----------------------------------------------------------
 
     def add(self, entry: CredentialEntry) -> None:
         """Encrypt and persist a new credential."""
-        blobs = self._read_blobs()
-        # Reject duplicates
-        if any(b["alias"] == entry.alias for b in blobs):
-            raise ValueError(f"Credential with alias '{entry.alias}' already exists")
-        blobs.append(self._encrypt(entry))
-        self._write_blobs(blobs)
+        with self._lock.acquire():
+            blobs = self._read_blobs()
+            # Reject duplicates
+            if any(b["alias"] == entry.alias for b in blobs):
+                raise ValueError(f"Credential with alias '{entry.alias}' already exists")
+            blobs.append(self._encrypt(entry))
+            self._write_blobs(blobs)
 
     def is_expired(self, alias: str) -> bool:
         """Check if a credential has passed its expiry date."""
@@ -111,15 +119,17 @@ class EncryptedStore:
 
     def get(self, alias: str) -> CredentialEntry:
         """Decrypt and return a credential by alias."""
-        blobs = self._read_blobs()
-        for blob in blobs:
-            if blob["alias"] == alias:
-                return self._decrypt(blob)
-        raise KeyError(f"No credential found with alias '{alias}'")
+        with self._lock.acquire():
+            blobs = self._read_blobs()
+            for blob in blobs:
+                if blob["alias"] == alias:
+                    return self._decrypt(blob)
+            raise KeyError(f"No credential found with alias '{alias}'")
 
     def list_aliases(self) -> list[dict[str, Any]]:
         """Return metadata for all stored credentials (no secrets)."""
-        blobs = self._read_blobs()
+        with self._lock.acquire():
+            blobs = self._read_blobs()
         return [
             {
                 "alias": b["alias"],
@@ -134,12 +144,13 @@ class EncryptedStore:
 
     def remove(self, alias: str) -> bool:
         """Remove a credential by alias. Returns True if found and removed."""
-        blobs = self._read_blobs()
-        new_blobs = [b for b in blobs if b["alias"] != alias]
-        if len(new_blobs) == len(blobs):
-            return False
-        self._write_blobs(new_blobs)
-        return True
+        with self._lock.acquire():
+            blobs = self._read_blobs()
+            new_blobs = [b for b in blobs if b["alias"] != alias]
+            if len(new_blobs) == len(blobs):
+                return False
+            self._write_blobs(new_blobs)
+            return True
 
     def update_secret(self, alias: str, new_secret: str) -> None:
         """
@@ -149,35 +160,85 @@ class EncryptedStore:
         write operation. If the process crashes mid-rotation, the
         original credential remains intact.
         """
-        blobs = self._read_blobs()
-        found = False
-        for i, blob in enumerate(blobs):
-            if blob["alias"] == alias:
-                # Decrypt, update, re-encrypt in memory
-                entry = self._decrypt(blob)
-                entry.secret = new_secret
-                entry.rotated_at = time.time()
-                blobs[i] = self._encrypt(entry)
-                found = True
-                break
-        if not found:
-            raise KeyError(f"No credential found with alias '{alias}'")
-        # Single atomic write replaces the entire file
-        self._write_blobs(blobs)
+        with self._lock.acquire():
+            blobs = self._read_blobs()
+            found = False
+            for i, blob in enumerate(blobs):
+                if blob["alias"] == alias:
+                    # Decrypt, update, re-encrypt in memory
+                    entry = self._decrypt(blob)
+                    entry.secret = new_secret
+                    entry.rotated_at = time.time()
+                    blobs[i] = self._encrypt(entry)
+                    found = True
+                    break
+            if not found:
+                raise KeyError(f"No credential found with alias '{alias}'")
+            # Single atomic write replaces the entire file
+            self._write_blobs(blobs)
+
+    def rekey(self, new_master_key: bytes) -> int:
+        """
+        Re-encrypt all credentials with a new master key.
+
+        Decrypts every entry with the current key, then re-encrypts
+        with the new key in a single atomic write.  If anything fails
+        mid-way, the file is left untouched (the old key still works).
+
+        Args:
+            new_master_key: 32-byte AES-256 key to re-encrypt with.
+
+        Returns:
+            Number of credentials re-encrypted.
+
+        Raises:
+            ValueError: If the new key is not 32 bytes.
+        """
+        if len(new_master_key) != 32:
+            raise ValueError("New master key must be exactly 32 bytes (256 bits)")
+
+        new_gcm = AESGCM(new_master_key)
+
+        with self._lock.acquire():
+            blobs = self._read_blobs()
+
+            # Phase 1: decrypt everything with the OLD key (in memory)
+            entries: list[CredentialEntry] = []
+            for blob in blobs:
+                entries.append(self._decrypt(blob))
+
+            # Phase 2: re-encrypt everything with the NEW key
+            self._gcm = new_gcm
+            new_blobs = []
+            for entry in entries:
+                new_blobs.append(self._encrypt(entry))
+
+            # Phase 3: atomic write
+            self._write_blobs(new_blobs)
+
+        return len(entries)
 
     # -- encryption primitives -----------------------------------------------
 
     def _encrypt(self, entry: CredentialEntry) -> dict:
-        """Encrypt a CredentialEntry into an EncryptedBlob dict."""
-        plaintext = json.dumps({
-            "username": entry.username,
-            "secret": entry.secret,
-            "allowed_urls": entry.allowed_urls,
-            "allowed_methods": entry.allowed_methods,
-        }).encode("utf-8")
+        """Encrypt a CredentialEntry into an EncryptedBlob dict.
+
+        Uses the credential alias as Associated Authenticated Data (AAD)
+        so that ciphertext cannot be swapped between credential entries
+        without detection.
+        """
+        plaintext = json.dumps(
+            {
+                "username": entry.username,
+                "secret": entry.secret,
+                "allowed_urls": entry.allowed_urls,
+                "allowed_methods": entry.allowed_methods,
+            }
+        ).encode("utf-8")
 
         nonce = os.urandom(12)  # 96-bit nonce, unique per entry
-        ciphertext = self._gcm.encrypt(nonce, plaintext, None)
+        aad = entry.alias.encode("utf-8")
+        ciphertext = self._gcm.encrypt(nonce, plaintext, aad)
 
         return {
             "alias": entry.alias,
@@ -191,10 +252,19 @@ class EncryptedStore:
         }
 
     def _decrypt(self, blob: dict) -> CredentialEntry:
-        """Decrypt an EncryptedBlob dict into a CredentialEntry."""
+        """Decrypt an EncryptedBlob dict into a CredentialEntry.
+
+        Tries AAD-based decryption first; falls back to legacy no-AAD
+        for entries encrypted before AAD was added.
+        """
         nonce = bytes.fromhex(blob["nonce"])
         ciphertext = bytes.fromhex(blob["ciphertext"])
-        plaintext = self._gcm.decrypt(nonce, ciphertext, None)
+        aad = blob["alias"].encode("utf-8")
+        try:
+            plaintext = self._gcm.decrypt(nonce, ciphertext, aad)
+        except InvalidTag:
+            # Legacy entry encrypted without AAD — fall back
+            plaintext = self._gcm.decrypt(nonce, ciphertext, None)
         secret_data = json.loads(plaintext.decode("utf-8"))
 
         return CredentialEntry(
