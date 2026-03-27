@@ -21,6 +21,7 @@ from coffer_mcp.security import (
     check_url_allowed,
     sanitize_content,
     sanitize_response,
+    validate_header_name,
     validate_http_method,
     validate_oauth2_secret,
 )
@@ -142,6 +143,24 @@ async def vault_http_request(
                 ),
             }
         client_id, client_secret, token_url, scope = oauth2_parts
+
+        # Validate token_url against allowlist to prevent exfiltration
+        # of client credentials to an attacker-controlled token endpoint
+        if not check_url_allowed(entry, token_url):
+            audit.log(
+                "credential.access_denied",
+                alias,
+                "failure",
+                {"reason": "token_url_not_allowed", "token_url": token_url},
+            )
+            return {
+                "status": "error",
+                "message": (
+                    f"OAuth2 token URL '{token_url}' is not in the "
+                    f"allowlist for credential '{alias}'."
+                ),
+            }
+
         access_token = await get_cached_token(alias, client_id, client_secret, token_url, scope)
         request_headers["Authorization"] = f"Bearer {access_token}"
         extra_secrets.append(access_token)
@@ -149,7 +168,13 @@ async def vault_http_request(
         # Convention: secret is in format "HeaderName: value"
         if ":" in entry.secret:
             header_name, header_value = entry.secret.split(":", 1)
-            request_headers[header_name.strip()] = header_value.strip()
+            safe_name = validate_header_name(header_name)
+            if safe_name is None:
+                return {
+                    "status": "error",
+                    "message": (f"Header '{header_name.strip()}' is blocked for security reasons."),
+                }
+            request_headers[safe_name] = header_value.strip()
         else:
             request_headers["X-API-Key"] = entry.secret
 

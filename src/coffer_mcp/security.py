@@ -28,6 +28,27 @@ MAX_RESPONSE_BYTES = 10 * 1024 * 1024  # 10 MB
 # Valid HTTP methods
 VALID_HTTP_METHODS = frozenset({"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"})
 
+# Headers that must not be set via api_key_header to prevent
+# request smuggling, host override, and auth bypass attacks.
+BLOCKED_HEADERS = frozenset(
+    {
+        "host",
+        "cookie",
+        "set-cookie",
+        "authorization",
+        "proxy-authorization",
+        "transfer-encoding",
+        "content-length",
+        "connection",
+        "upgrade",
+        "x-forwarded-for",
+        "x-forwarded-host",
+        "x-forwarded-proto",
+        "x-real-ip",
+        "forwarded",
+    }
+)
+
 # Max wait time for wait_after_login (60 seconds)
 MAX_WAIT_AFTER_LOGIN_MS = 60_000
 
@@ -50,6 +71,22 @@ _INJECTION_PATTERNS = [
 # ---------------------------------------------------------------------------
 # Input validation
 # ---------------------------------------------------------------------------
+
+
+def validate_header_name(name: str) -> str | None:
+    """
+    Validate a custom header name from api_key_header secrets.
+
+    Blocks security-sensitive headers that could enable request smuggling,
+    host override, or auth bypass. Returns the stripped name if safe, or
+    None if the header is blocked.
+    """
+    stripped = name.strip()
+    if not stripped:
+        return None
+    if stripped.lower() in BLOCKED_HEADERS:
+        return None
+    return stripped
 
 
 def validate_http_method(method: str) -> str | None:

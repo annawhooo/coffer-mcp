@@ -173,19 +173,37 @@ async def vault_web_fetch(
     # 2. Validate fetch URL against allowlist
     try:
         entry = store.get(alias)
-        if not check_url_allowed(entry, url):
-            audit.log(
-                "web_fetch.failed",
-                alias,
-                "failure",
-                {"reason": "url_not_allowed", "url": url},
-            )
-            return {
-                "status": "error",
-                "message": f"URL '{url}' is not in the allowed URLs for '{alias}'.",
-            }
     except KeyError:
-        pass  # Credential deleted after login — allow fetch to proceed
+        # Credential deleted after login — close the session and block
+        async with _sessions_lock:
+            orphan = _sessions.pop(alias, None)
+        if orphan:
+            await orphan.aclose()
+        audit.log(
+            "web_fetch.failed",
+            alias,
+            "failure",
+            {"reason": "credential_deleted"},
+        )
+        return {
+            "status": "error",
+            "message": (
+                f"Credential '{alias}' was deleted. "
+                "Session closed for safety. Re-add the credential and log in again."
+            ),
+        }
+
+    if not check_url_allowed(entry, url):
+        audit.log(
+            "web_fetch.failed",
+            alias,
+            "failure",
+            {"reason": "url_not_allowed", "url": url},
+        )
+        return {
+            "status": "error",
+            "message": f"URL '{url}' is not in the allowed URLs for '{alias}'.",
+        }
 
     # 4. Fetch the page
     try:
