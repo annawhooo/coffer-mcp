@@ -144,7 +144,7 @@ class TestOAuth2TokenUrlAllowlist:
         from coffer_mcp.tools.vault_http_request import vault_http_request
 
         # Mock the token acquisition (we only need to verify it gets past the check)
-        with patch("coffer_mcp.tools.vault_http_request.httpx.AsyncClient") as mock_cls:
+        with patch("httpx.AsyncClient") as mock_cls:
             mock_client = mock_cls.return_value.__aenter__.return_value
 
             # Mock token endpoint
@@ -260,7 +260,7 @@ class TestBlockedHeaders:
             request=httpx.Request("GET", "https://api.example.com/data"),
         )
 
-        with patch("coffer_mcp.tools.vault_http_request.httpx.AsyncClient") as mock_cls:
+        with patch("httpx.AsyncClient") as mock_cls:
             mock_client = mock_cls.return_value.__aenter__.return_value
             mock_client.request.return_value = mock_response
 

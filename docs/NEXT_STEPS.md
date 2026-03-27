@@ -17,9 +17,9 @@
 
 | # | Item | Status | Effort |
 |---|------|--------|--------|
-| 5 | **End-to-end MCP integration tests** — start server, send tools/call requests, verify responses at the protocol boundary | TODO | 1-2 days |
-| 6 | **Property-based testing / fuzzing** — Hypothesis for encrypt/decrypt round-trip, URL allowlist invariants, backup import crash resistance, CSS selector fuzzing | TODO | 1-2 days |
-| 7 | **Mutation testing** — mutmut to verify tests actually catch bugs (mutation kill rate) | TODO | Half day |
+| 5 | **End-to-end MCP integration tests** — start server, send tools/call requests, verify responses at the protocol boundary | ✅ DONE | 1-2 days |
+| 6 | **Property-based testing / fuzzing** — Hypothesis for encrypt/decrypt round-trip, URL allowlist invariants, backup import crash resistance, CSS selector fuzzing | ✅ DONE | 1-2 days |
+| 7 | **Mutation testing** — cosmic-ray to verify tests actually catch bugs (100% mutation kill rate) | ✅ DONE | Half day |
 | 8 | **File permissions hardening** — set 0600 on credentials.json and audit.jsonl on creation; Windows ACLs for current user only | ✅ DONE | 1 hour |
 
 ## Tier 3 — Enterprise readiness
@@ -49,3 +49,8 @@
 | Fix #2: OAuth2 access token sanitization from responses | 2026-03-25 |
 | MCP trust boundary: URL allowlist on all credential-using tools | 2026-03-25 |
 | Secure memory: SecureBuffer, wipe_entry, harden_process + residual risk docs | 2026-03-25 |
+| E2E MCP integration tests (TestCofferHttpRequest, TestCofferWebFetch, etc.) | 2026-03-26 |
+| Property-based testing with Hypothesis (encrypt/decrypt round-trip, allowlist invariants) | 2026-03-26 |
+| Mutation testing with cosmic-ray (100% kill rate) | 2026-03-26 |
+| Structured error codes, MCP ToolAnnotations, store format versioning | 2026-03-26 |
+| Fix: httpx.AsyncClient patch target in E2E tests | 2026-03-27 |
