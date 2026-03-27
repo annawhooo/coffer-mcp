@@ -99,7 +99,20 @@ async def browser_web_login(
             "message": f"Credential '{alias}' is type '{entry.auth_type}', not 'web_login'",
         }
 
-    # 2. Launch browser and navigate to login page
+    # 2. Validate login_url against allowlist
+    if not check_url_allowed(entry, login_url):
+        audit.log(
+            "browser_login.failed",
+            alias,
+            "failure",
+            {"reason": "url_not_allowed", "login_url": login_url},
+        )
+        return {
+            "status": "error",
+            "message": f"URL '{login_url}' is not in the allowlist for '{alias}'.",
+        }
+
+    # 3. Launch browser and navigate to login page
     try:
         browser = await _ensure_browser()
         context = await browser.new_context()
@@ -212,22 +225,31 @@ async def browser_web_fetch(
     # Enforce URL allowlist on the fetch target
     try:
         entry = store.get(alias)
-        if not check_url_allowed(entry, url):
-            audit.log(
-                "browser_fetch.failed",
-                alias,
-                "failure",
-                {
-                    "reason": "url_not_allowed",
-                    "url": url,
-                },
-            )
-            return {
-                "status": "error",
-                "message": f"URL '{url}' is not in the allowlist for credential '{alias}'",
-            }
     except KeyError:
-        pass  # Credential deleted mid-session; proceed cautiously
+        # Credential deleted mid-session — close session and block
+        await browser_web_logout(alias)
+        audit.log(
+            "browser_fetch.failed",
+            alias,
+            "failure",
+            {"reason": "credential_deleted"},
+        )
+        return {
+            "status": "error",
+            "message": (f"Credential '{alias}' was deleted. Browser session closed for safety."),
+        }
+
+    if not check_url_allowed(entry, url):
+        audit.log(
+            "browser_fetch.failed",
+            alias,
+            "failure",
+            {"reason": "url_not_allowed", "url": url},
+        )
+        return {
+            "status": "error",
+            "message": f"URL '{url}' is not in the allowlist for credential '{alias}'",
+        }
 
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=30000)
@@ -291,12 +313,8 @@ async def browser_web_fetch(
         title = page_title
         markdown_content = raw_html
 
-    # Sanitize response
-    try:
-        entry = store.get(alias)
-        markdown_content = sanitize_response(markdown_content, entry)
-    except KeyError:
-        pass
+    # Sanitize response (entry already resolved from allowlist check above)
+    markdown_content = sanitize_response(markdown_content, entry)
     markdown_content = sanitize_content(markdown_content)
 
     audit.log(
