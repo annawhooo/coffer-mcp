@@ -1,4 +1,0 @@
-# file: C:\Users\Anna\PycharmProjects\coffer-mcp\src\coffer_mcp\tools\vault_http_request.py
-# hypothesis_version: 6.151.9
-
-[30.0, 301, 302, 303, 307, 308, 1024, '%Y-%m-%d %H:%M UTC', ':', 'Authorization', 'GET', 'PATCH', 'POST', 'PUT', 'X-API-Key', '\\1[REDACTED]', 'api_key_header', 'basic_auth', 'bearer_token', 'body', 'content-type', 'content_type', 'credential.expired', 'credential.used', 'error', 'expired_at', 'failure', 'hop', 'location', 'message', 'method', 'method_not_allowed', 'not_found', 'ok', 'original_url', 'reason', 'redirect_url', 'replace', 'status', 'status_code', 'success', 'url', 'url_not_allowed', 'utf-8']

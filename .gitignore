@@ -27,6 +27,9 @@ Thumbs.db
 .pytest_cache/
 htmlcov/
 .coverage
+.hypothesis/
+mutation_session.sqlite
+*.lock
 
 # Coffer vault data (NEVER commit these)
 .coffer/

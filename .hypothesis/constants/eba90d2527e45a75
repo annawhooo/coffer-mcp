@@ -1,4 +1,0 @@
-# file: C:\Users\Anna\PycharmProjects\coffer-mcp\src\coffer_mcp\security.py
-# hypothesis_version: 6.151.9
-
-[1024, 60000, 200000, '"', "'", '/', '<!--.*?-->', '<script', 'DELETE', 'GET', 'HEAD', 'OPTIONS', 'PATCH', 'POST', 'PUT', '[REDACTED]', 'eval(', 'expression(', 'http://', 'https://', 'import(', 'javascript:', 'onerror=', 'onload=', 'url(', '|']

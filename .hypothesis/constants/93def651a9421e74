@@ -1,4 +1,0 @@
-# file: C:\Users\Anna\PycharmProjects\coffer-mcp\src\coffer_mcp\tools\__init__.py
-# hypothesis_version: 6.151.9
-
-['clear_token_cache', 'get_cached_token', 'vault_http_request', 'vault_list', 'vault_test', 'vault_web_fetch', 'vault_web_login', 'vault_web_logout']
