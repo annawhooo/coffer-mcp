@@ -1,8 +1,0 @@
-{
-    "mcpServers": {
-        "coffer": {
-            "command": "python",
-            "args": ["-m", "coffer_mcp.server"]
-        }
-    }
-}
