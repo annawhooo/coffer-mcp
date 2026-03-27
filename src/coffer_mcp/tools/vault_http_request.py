@@ -153,9 +153,11 @@ async def vault_http_request(
         else:
             request_headers["X-API-Key"] = entry.secret
 
-    # 5b. Wipe the decrypted secret from the entry now that headers are built.
-    # The secret is still in the header dict (needed for the request) but
-    # no longer in the CredentialEntry object, reducing the exposure window.
+    # 5b. Capture secret for response sanitization, then wipe the entry.
+    # The secret is still in the header dict (needed for the request) and
+    # in extra_secrets (needed for scrubbing), but no longer on the entry.
+    if entry.secret and entry.secret not in extra_secrets:
+        extra_secrets.append(entry.secret)
     wipe_entry(entry)
 
     # 6. Make the request (redirects checked per-hop against allowlist)
