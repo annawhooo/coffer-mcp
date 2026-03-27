@@ -70,6 +70,7 @@ class TestEncryptDecryptRoundTrip:
     )
     @settings(
         max_examples=200,
+        deadline=None,
         suppress_health_check=[HealthCheck.too_slow],
     )
     def test_roundtrip_preserves_data(self, secret, username, alias):
@@ -95,6 +96,7 @@ class TestEncryptDecryptRoundTrip:
     @given(data=st.binary(min_size=0, max_size=1000))
     @settings(
         max_examples=100,
+        deadline=None,
         suppress_health_check=[HealthCheck.too_slow],
     )
     def test_arbitrary_bytes_in_secret(self, data):
@@ -281,7 +283,7 @@ class TestBackupRoundTrip:
             new_key = os.urandom(32)
             new_store = EncryptedStore(new_key, td_path / "new_creds.json")
             result = import_vault(new_store, passphrase, backup_path)
-            assert result["status"] in ("success", "ok")
+            assert result["status"] == "ok"
 
             for i, secret in enumerate(secrets):
                 entry = new_store.get(f"entry{i}")

@@ -298,12 +298,29 @@ class EncryptedStore:
     # -- file I/O ------------------------------------------------------------
 
     def _read_blobs(self) -> list[dict]:
-        """Read the encrypted blobs from disk."""
+        """Read the encrypted blobs from disk.
+
+        Raises json.JSONDecodeError if the file exists but is corrupted,
+        rather than silently returning an empty list (which would make
+        all credentials appear to vanish).
+        """
         try:
             with open(self._path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except (json.JSONDecodeError, FileNotFoundError):
+                content = f.read()
+        except FileNotFoundError:
             return []
+
+        if not content.strip():
+            return []
+
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError as e:
+            raise json.JSONDecodeError(
+                f"Credential store is corrupted ({self._path}): {e.msg}",
+                e.doc,
+                e.pos,
+            ) from e
 
     def _write_blobs(self, blobs: list[dict]) -> None:
         """Write encrypted blobs to disk atomically with secure permissions."""

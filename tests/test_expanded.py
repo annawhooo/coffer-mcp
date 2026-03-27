@@ -391,7 +391,7 @@ class TestCorruptedBackupRecovery:
         assert result["status"] == "error"
 
     def test_corrupted_credential_store_file(self, master_key, tmp_path):
-        """Corrupted credentials.json should not crash the store."""
+        """Corrupted credentials.json should raise, not silently lose data."""
         store_path = tmp_path / "creds.json"
         store = EncryptedStore(master_key, store_path)
         store.add(
@@ -406,9 +406,9 @@ class TestCorruptedBackupRecovery:
         # Corrupt the file
         store_path.write_text("{invalid json content!@#$")
 
-        # Store should handle gracefully (return empty list, not crash)
-        aliases = store.list_aliases()
-        assert aliases == []
+        # Store should raise JSONDecodeError, not silently return []
+        with pytest.raises(json.JSONDecodeError, match="corrupted"):
+            store.list_aliases()
 
     def test_backup_with_extra_fields_still_imports(self, master_key, tmp_path):
         """Backup with unknown extra fields should still import correctly."""
