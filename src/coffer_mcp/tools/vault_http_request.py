@@ -14,6 +14,20 @@ from typing import Any
 import httpx
 
 from coffer_mcp.audit import AuditLogger
+from coffer_mcp.errors import (
+    CREDENTIAL_EXPIRED,
+    CREDENTIAL_NOT_FOUND,
+    HEADER_BLOCKED,
+    HTTP_REQUEST_FAILED,
+    INVALID_HTTP_METHOD,
+    INVALID_OAUTH2_FORMAT,
+    METHOD_NOT_ALLOWED,
+    REDIRECT_URL_NOT_ALLOWED,
+    TOKEN_URL_NOT_ALLOWED,
+    TOO_MANY_REDIRECTS,
+    URL_NOT_ALLOWED,
+    error_response,
+)
 from coffer_mcp.secmem import wipe_entry
 from coffer_mcp.security import (
     MAX_RESPONSE_BYTES,
@@ -60,13 +74,11 @@ async def vault_http_request(
     # 0. Validate HTTP method
     validated_method = validate_http_method(method)
     if validated_method is None:
-        return {
-            "status": "error",
-            "message": (
-                f"Invalid HTTP method '{method}'."
-                " Must be one of: GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS."
-            ),
-        }
+        return error_response(
+            INVALID_HTTP_METHOD,
+            f"Invalid HTTP method '{method}'."
+            " Must be one of: GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS.",
+        )
     method = validated_method
 
     # 1. Resolve the credential
@@ -74,7 +86,7 @@ async def vault_http_request(
         entry = store.get(alias)
     except KeyError:
         audit.log("credential.access_failed", alias, "failure", {"reason": "not_found"})
-        return {"status": "error", "message": f"No credential found with alias '{alias}'"}
+        return error_response(CREDENTIAL_NOT_FOUND, f"No credential found with alias '{alias}'")
 
     # 2. Check credential expiry
     if entry.expires_at and time.time() > entry.expires_at:
@@ -85,13 +97,11 @@ async def vault_http_request(
             tz=timezone.utc,
         ).strftime("%Y-%m-%d %H:%M UTC")
         audit.log("credential.expired", alias, "failure", {"expired_at": exp_str})
-        return {
-            "status": "error",
-            "message": (
-                f"Credential '{alias}' expired on {exp_str}. "
-                f"Ask the user to rotate it with: coffer rotate {alias}"
-            ),
-        }
+        return error_response(
+            CREDENTIAL_EXPIRED,
+            f"Credential '{alias}' expired on {exp_str}. "
+            f"Ask the user to rotate it with: coffer rotate {alias}",
+        )
 
     # 3. Enforce URL allowlist
     if not check_url_allowed(entry, url):
@@ -101,10 +111,10 @@ async def vault_http_request(
             "failure",
             {"reason": "url_not_allowed", "url": url},
         )
-        return {
-            "status": "error",
-            "message": f"URL '{url}' is not in the allowlist for credential '{alias}'",
-        }
+        return error_response(
+            URL_NOT_ALLOWED,
+            f"URL '{url}' is not in the allowlist for credential '{alias}'",
+        )
 
     # 4. Enforce method allowlist
     if not check_method_allowed(entry, method):
@@ -114,10 +124,10 @@ async def vault_http_request(
             "failure",
             {"reason": "method_not_allowed", "method": method},
         )
-        return {
-            "status": "error",
-            "message": f"Method '{method}' is not allowed for credential '{alias}'",
-        }
+        return error_response(
+            METHOD_NOT_ALLOWED,
+            f"Method '{method}' is not allowed for credential '{alias}'",
+        )
 
     # 5. Build the request with injected auth
     request_headers = dict(headers or {})
@@ -135,13 +145,11 @@ async def vault_http_request(
 
         oauth2_parts = validate_oauth2_secret(entry.username, entry.secret)
         if oauth2_parts is None:
-            return {
-                "status": "error",
-                "message": (
-                    f"Credential '{alias}' has invalid OAuth2 format. "
-                    f"Expected username='client_id|client_secret', secret='token_url|scope'."
-                ),
-            }
+            return error_response(
+                INVALID_OAUTH2_FORMAT,
+                f"Credential '{alias}' has invalid OAuth2 format. "
+                f"Expected username='client_id|client_secret', secret='token_url|scope'.",
+            )
         client_id, client_secret, token_url, scope = oauth2_parts
 
         # Validate token_url against allowlist to prevent exfiltration
@@ -153,13 +161,10 @@ async def vault_http_request(
                 "failure",
                 {"reason": "token_url_not_allowed", "token_url": token_url},
             )
-            return {
-                "status": "error",
-                "message": (
-                    f"OAuth2 token URL '{token_url}' is not in the "
-                    f"allowlist for credential '{alias}'."
-                ),
-            }
+            return error_response(
+                TOKEN_URL_NOT_ALLOWED,
+                f"OAuth2 token URL '{token_url}' is not in the allowlist for credential '{alias}'.",
+            )
 
         access_token = await get_cached_token(alias, client_id, client_secret, token_url, scope)
         request_headers["Authorization"] = f"Bearer {access_token}"
@@ -170,10 +175,10 @@ async def vault_http_request(
             header_name, header_value = entry.secret.split(":", 1)
             safe_name = validate_header_name(header_name)
             if safe_name is None:
-                return {
-                    "status": "error",
-                    "message": (f"Header '{header_name.strip()}' is blocked for security reasons."),
-                }
+                return error_response(
+                    HEADER_BLOCKED,
+                    f"Header '{header_name.strip()}' is blocked for security reasons.",
+                )
             request_headers[safe_name] = header_value.strip()
         else:
             request_headers["X-API-Key"] = entry.secret
@@ -225,14 +230,12 @@ async def vault_http_request(
                             "hop": redirect_hop + 1,
                         },
                     )
-                    return {
-                        "status": "error",
-                        "message": (
-                            f"Redirect from '{current_url}' to '{next_url}' "
-                            f"is outside the allowlist for credential '{alias}'. "
-                            f"Blocked at hop {redirect_hop + 1}."
-                        ),
-                    }
+                    return error_response(
+                        REDIRECT_URL_NOT_ALLOWED,
+                        f"Redirect from '{current_url}' to '{next_url}' "
+                        f"is outside the allowlist for credential '{alias}'. "
+                        f"Blocked at hop {redirect_hop + 1}.",
+                    )
 
                 current_url = next_url
                 # On 303, method changes to GET per HTTP spec
@@ -241,10 +244,10 @@ async def vault_http_request(
                     body = None
             else:
                 # Exceeded max redirects
-                return {
-                    "status": "error",
-                    "message": f"Too many redirects ({max_redirects}) for '{url}'",
-                }
+                return error_response(
+                    TOO_MANY_REDIRECTS,
+                    f"Too many redirects ({max_redirects}) for '{url}'",
+                )
 
         # 7. Enforce response size limit and sanitize
         if len(response.content) > MAX_RESPONSE_BYTES:
@@ -295,7 +298,4 @@ async def vault_http_request(
             "failure",
             {"url": url, "method": method.upper(), "error": error_msg},
         )
-        return {
-            "status": "error",
-            "message": f"HTTP request failed: {error_msg}",
-        }
+        return error_response(HTTP_REQUEST_FAILED, f"HTTP request failed: {error_msg}")

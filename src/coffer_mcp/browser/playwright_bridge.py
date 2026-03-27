@@ -16,6 +16,18 @@ import time
 from typing import Any
 
 from coffer_mcp.audit import AuditLogger
+from coffer_mcp.errors import (
+    CREDENTIAL_DELETED,
+    CREDENTIAL_NOT_FOUND,
+    CREDENTIAL_WRONG_TYPE,
+    FETCH_FAILED,
+    INVALID_CSS_SELECTOR,
+    LOGIN_FAILED,
+    NO_ACTIVE_SESSION,
+    SESSION_EXPIRED,
+    URL_NOT_ALLOWED,
+    error_response,
+)
 from coffer_mcp.security import (
     check_url_allowed,
     sanitize_content,
@@ -79,10 +91,10 @@ async def browser_web_login(
         ("submit_selector", submit_selector),
     ]:
         if validate_css_selector(sel_val) is None:
-            return {
-                "status": "error",
-                "message": f"Invalid or suspicious CSS selector for {sel_name}: '{sel_val}'",
-            }
+            return error_response(
+                INVALID_CSS_SELECTOR,
+                f"Invalid or suspicious CSS selector for {sel_name}: '{sel_val}'",
+            )
     wait_after_login = validate_wait_after_login(wait_after_login)
 
     # 1. Resolve credential
@@ -90,7 +102,7 @@ async def browser_web_login(
         entry = store.get(alias)
     except KeyError:
         audit.log("browser_login.failed", alias, "failure", {"reason": "not_found"})
-        return {"status": "error", "message": f"No credential found with alias '{alias}'"}
+        return error_response(CREDENTIAL_NOT_FOUND, f"No credential found with alias '{alias}'")
 
     if entry.auth_type != "web_login":
         audit.log(
@@ -99,10 +111,10 @@ async def browser_web_login(
             "failure",
             {"reason": "wrong_auth_type", "actual": entry.auth_type},
         )
-        return {
-            "status": "error",
-            "message": f"Credential '{alias}' is not configured for web login.",
-        }
+        return error_response(
+            CREDENTIAL_WRONG_TYPE,
+            f"Credential '{alias}' is not configured for web login.",
+        )
 
     # 2. Validate login_url against allowlist
     if not check_url_allowed(entry, login_url):
@@ -112,10 +124,10 @@ async def browser_web_login(
             "failure",
             {"reason": "url_not_allowed", "login_url": login_url},
         )
-        return {
-            "status": "error",
-            "message": f"URL '{login_url}' is not in the allowlist for '{alias}'.",
-        }
+        return error_response(
+            URL_NOT_ALLOWED,
+            f"URL '{login_url}' is not in the allowlist for '{alias}'.",
+        )
 
     # 3. Launch browser and navigate to login page
     try:
@@ -173,7 +185,7 @@ async def browser_web_login(
             "failure",
             {"login_url": login_url, "error": str(e)},
         )
-        return {"status": "error", "message": f"Browser login failed: {str(e)}"}
+        return error_response(LOGIN_FAILED, f"Browser login failed: {e}")
 
 
 async def browser_web_fetch(
@@ -199,10 +211,10 @@ async def browser_web_fetch(
     ctx = _contexts.get(alias)
     if ctx is None:
         audit.log("browser_fetch.failed", alias, "failure", {"reason": "no_session"})
-        return {
-            "status": "error",
-            "message": f"No active browser session for '{alias}'. Call coffer_web_login first.",
-        }
+        return error_response(
+            NO_ACTIVE_SESSION,
+            f"No active browser session for '{alias}'. Call coffer_web_login first.",
+        )
 
     # Check session expiry
     session_age = time.time() - ctx.get("created_at", 0)
@@ -212,18 +224,13 @@ async def browser_web_fetch(
             "browser_fetch.failed",
             alias,
             "failure",
-            {
-                "reason": "session_expired",
-                "age_seconds": int(session_age),
-            },
+            {"reason": "session_expired", "age_seconds": int(session_age)},
         )
-        return {
-            "status": "error",
-            "message": (
-                f"Browser session for '{alias}' expired after "
-                f"{int(session_age // 60)} minutes. Call coffer_web_login to re-authenticate."
-            ),
-        }
+        return error_response(
+            SESSION_EXPIRED,
+            f"Browser session for '{alias}' expired after "
+            f"{int(session_age // 60)} minutes. Call coffer_web_login to re-authenticate.",
+        )
 
     page = ctx["page"]
 
@@ -231,7 +238,6 @@ async def browser_web_fetch(
     try:
         entry = store.get(alias)
     except KeyError:
-        # Credential deleted mid-session — close session and block
         await browser_web_logout(alias)
         audit.log(
             "browser_fetch.failed",
@@ -239,10 +245,10 @@ async def browser_web_fetch(
             "failure",
             {"reason": "credential_deleted"},
         )
-        return {
-            "status": "error",
-            "message": (f"Credential '{alias}' was deleted. Browser session closed for safety."),
-        }
+        return error_response(
+            CREDENTIAL_DELETED,
+            f"Credential '{alias}' was deleted. Browser session closed for safety.",
+        )
 
     if not check_url_allowed(entry, url):
         audit.log(
@@ -251,10 +257,10 @@ async def browser_web_fetch(
             "failure",
             {"reason": "url_not_allowed", "url": url},
         )
-        return {
-            "status": "error",
-            "message": f"URL '{url}' is not in the allowlist for credential '{alias}'",
-        }
+        return error_response(
+            URL_NOT_ALLOWED,
+            f"URL '{url}' is not in the allowlist for credential '{alias}'",
+        )
 
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=30000)
@@ -280,7 +286,7 @@ async def browser_web_fetch(
         raw_html = await page.content()
     except Exception as e:
         audit.log("browser_fetch.failed", alias, "failure", {"url": url, "error": str(e)})
-        return {"status": "error", "message": f"Failed to fetch page: {str(e)}"}
+        return error_response(FETCH_FAILED, f"Failed to fetch page: {e}")
 
     # Extract content
     if extract_content:

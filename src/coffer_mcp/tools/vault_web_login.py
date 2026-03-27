@@ -22,6 +22,16 @@ import httpx
 from readability import Document
 
 from coffer_mcp.audit import AuditLogger
+from coffer_mcp.errors import (
+    CREDENTIAL_DELETED,
+    CREDENTIAL_NOT_FOUND,
+    CREDENTIAL_WRONG_TYPE,
+    FETCH_FAILED,
+    LOGIN_FAILED,
+    NO_ACTIVE_SESSION,
+    URL_NOT_ALLOWED,
+    error_response,
+)
 from coffer_mcp.secmem import wipe_entry
 from coffer_mcp.security import MAX_RESPONSE_BYTES, check_url_allowed, sanitize_response
 from coffer_mcp.store import EncryptedStore
@@ -61,7 +71,7 @@ async def vault_web_login(
         entry = store.get(alias)
     except KeyError:
         audit.log("web_login.failed", alias, "failure", {"reason": "not_found"})
-        return {"status": "error", "message": f"No credential found with alias '{alias}'"}
+        return error_response(CREDENTIAL_NOT_FOUND, f"No credential found with alias '{alias}'")
 
     if entry.auth_type != "web_login":
         audit.log(
@@ -70,10 +80,10 @@ async def vault_web_login(
             "failure",
             {"reason": "wrong_auth_type", "actual": entry.auth_type},
         )
-        return {
-            "status": "error",
-            "message": f"Credential '{alias}' is not configured for web login.",
-        }
+        return error_response(
+            CREDENTIAL_WRONG_TYPE,
+            f"Credential '{alias}' is not configured for web login.",
+        )
 
     # 2. Validate login_url against allowlist
     if not check_url_allowed(entry, login_url):
@@ -83,10 +93,10 @@ async def vault_web_login(
             "failure",
             {"reason": "url_not_allowed", "login_url": login_url},
         )
-        return {
-            "status": "error",
-            "message": f"URL '{login_url}' is not in the allowed URLs for '{alias}'.",
-        }
+        return error_response(
+            URL_NOT_ALLOWED,
+            f"URL '{login_url}' is not in the allowed URLs for '{alias}'.",
+        )
 
     # 3. Build login form data
     form_data = {
@@ -112,10 +122,10 @@ async def vault_web_login(
                 "failure",
                 {"login_url": login_url, "status_code": response.status_code},
             )
-            return {
-                "status": "error",
-                "message": f"Login failed with status {response.status_code}",
-            }
+            return error_response(
+                LOGIN_FAILED,
+                f"Login failed with status {response.status_code}",
+            )
 
         # Cache the authenticated session (lock protects concurrent access)
         async with _sessions_lock:
@@ -130,7 +140,7 @@ async def vault_web_login(
 
         return {
             "status": "ok",
-            "message": f"Successfully logged in as {entry.username}",
+            "message": f"Successfully logged into '{alias}'.",
             "session_active": True,
         }
 
@@ -141,7 +151,7 @@ async def vault_web_login(
             "failure",
             {"login_url": login_url, "error": str(e)},
         )
-        return {"status": "error", "message": f"Login request failed: {str(e)}"}
+        return error_response(LOGIN_FAILED, f"Login request failed: {e}")
 
 
 async def vault_web_fetch(
@@ -170,10 +180,10 @@ async def vault_web_fetch(
         client = _sessions.get(alias)
     if client is None:
         audit.log("web_fetch.failed", alias, "failure", {"reason": "no_session"})
-        return {
-            "status": "error",
-            "message": f"No active session for '{alias}'. Call vault_web_login first.",
-        }
+        return error_response(
+            NO_ACTIVE_SESSION,
+            f"No active session for '{alias}'. Call vault_web_login first.",
+        )
 
     # 2. Validate fetch URL against allowlist
     try:
@@ -190,13 +200,11 @@ async def vault_web_fetch(
             "failure",
             {"reason": "credential_deleted"},
         )
-        return {
-            "status": "error",
-            "message": (
-                f"Credential '{alias}' was deleted. "
-                "Session closed for safety. Re-add the credential and log in again."
-            ),
-        }
+        return error_response(
+            CREDENTIAL_DELETED,
+            f"Credential '{alias}' was deleted. "
+            "Session closed for safety. Re-add the credential and log in again.",
+        )
 
     if not check_url_allowed(entry, url):
         audit.log(
@@ -205,10 +213,10 @@ async def vault_web_fetch(
             "failure",
             {"reason": "url_not_allowed", "url": url},
         )
-        return {
-            "status": "error",
-            "message": f"URL '{url}' is not in the allowed URLs for '{alias}'.",
-        }
+        return error_response(
+            URL_NOT_ALLOWED,
+            f"URL '{url}' is not in the allowed URLs for '{alias}'.",
+        )
 
     # 4. Fetch the page
     try:
@@ -220,7 +228,7 @@ async def vault_web_fetch(
             "failure",
             {"url": url, "error": str(e)},
         )
-        return {"status": "error", "message": f"Fetch failed: {str(e)}"}
+        return error_response(FETCH_FAILED, f"Fetch failed: {e}")
 
     if response.status_code >= 400:
         audit.log(
@@ -229,10 +237,7 @@ async def vault_web_fetch(
             "failure",
             {"url": url, "status_code": response.status_code},
         )
-        return {
-            "status": "error",
-            "message": f"Page returned status {response.status_code}",
-        }
+        return error_response(FETCH_FAILED, f"Page returned status {response.status_code}")
 
     # 5. Enforce response size limit and extract content
     if len(response.content) > MAX_RESPONSE_BYTES:
