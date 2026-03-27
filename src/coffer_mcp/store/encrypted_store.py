@@ -22,6 +22,8 @@ from coffer_mcp.filelock import FileLock
 from coffer_mcp.permissions import secure_directory, secure_file
 from coffer_mcp.secmem import SecureBuffer
 
+STORE_VERSION = 2  # Bump when the on-disk format changes
+
 # ---------------------------------------------------------------------------
 # Data models
 # ---------------------------------------------------------------------------
@@ -43,11 +45,14 @@ class CredentialEntry:
     expires_at: float | None = None  # Unix timestamp; None = never expires
 
     def metadata(self) -> dict[str, Any]:
-        """Return only non-secret fields (safe to show the LLM)."""
+        """Return only non-secret fields (safe to show the LLM).
+
+        Note: username is intentionally excluded because for many auth
+        types it is half the credential (e.g., basic_auth, web_login).
+        """
         return {
             "alias": self.alias,
             "auth_type": self.auth_type,
-            "username": self.username,
             "allowed_urls": self.allowed_urls,
             "allowed_methods": self.allowed_methods,
             "description": self.description,
@@ -314,7 +319,7 @@ class EncryptedStore:
             return []
 
         try:
-            return json.loads(content)
+            data = json.loads(content)
         except json.JSONDecodeError as e:
             raise json.JSONDecodeError(
                 f"Credential store is corrupted ({self._path}): {e.msg}",
@@ -322,11 +327,21 @@ class EncryptedStore:
                 e.pos,
             ) from e
 
+        # Support both formats:
+        #   v2+: {"version": N, "credentials": [...]}
+        #   v1 (legacy): bare list [...]
+        if isinstance(data, list):
+            return data  # Legacy format
+        if isinstance(data, dict) and "credentials" in data:
+            return data["credentials"]
+        return []
+
     def _write_blobs(self, blobs: list[dict]) -> None:
         """Write encrypted blobs to disk atomically with secure permissions."""
         tmp_path = self._path.with_suffix(".tmp")
+        envelope = {"version": STORE_VERSION, "credentials": blobs}
         with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(blobs, f, indent=2)
+            json.dump(envelope, f, indent=2)
         secure_file(tmp_path)
         tmp_path.replace(self._path)
         secure_file(self._path)

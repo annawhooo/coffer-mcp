@@ -14,6 +14,16 @@ from typing import Any
 import httpx
 
 from coffer_mcp.audit import AuditLogger
+from coffer_mcp.errors import (
+    CREDENTIAL_EXPIRED,
+    CREDENTIAL_NOT_FOUND,
+    CREDENTIAL_WRONG_TYPE,
+    HTTP_REQUEST_FAILED,
+    INVALID_HTTP_METHOD,
+    INVALID_OAUTH2_FORMAT,
+    URL_NOT_ALLOWED,
+    error_response,
+)
 from coffer_mcp.security import (
     check_url_allowed,
     sanitize_response,
@@ -41,36 +51,34 @@ async def vault_test(
     # Validate HTTP method
     validated_method = validate_http_method(method)
     if validated_method is None:
-        return {
-            "status": "error",
-            "message": (
-                f"Invalid HTTP method '{method}'."
-                " Must be one of: GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS."
-            ),
-        }
+        return error_response(
+            INVALID_HTTP_METHOD,
+            f"Invalid HTTP method '{method}'."
+            " Must be one of: GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS.",
+        )
     method = validated_method
 
     try:
         entry = store.get(alias)
     except KeyError:
-        return {"status": "error", "message": f"No credential found with alias '{alias}'"}
+        return error_response(CREDENTIAL_NOT_FOUND, f"No credential found with alias '{alias}'")
 
     # Check expiry
     if entry.expires_at and time.time() > entry.expires_at:
-        return {"status": "error", "test": "FAIL", "reason": "credential_expired"}
+        return {**error_response(CREDENTIAL_EXPIRED, "credential_expired"), "test": "FAIL"}
 
     # Determine test URL
     test_url = url
     if not test_url:
         if not entry.allowed_urls:
-            return {
-                "status": "error",
-                "message": "No allowed URLs configured; pass a URL to test.",
-            }
+            return error_response(
+                URL_NOT_ALLOWED,
+                "No allowed URLs configured; pass a URL to test.",
+            )
         test_url = entry.allowed_urls[0].replace("/*", "/").rstrip("*")
 
     if not check_url_allowed(entry, test_url):
-        return {"status": "error", "message": f"URL '{test_url}' is not in the allowlist."}
+        return error_response(URL_NOT_ALLOWED, f"URL '{test_url}' is not in the allowlist.")
 
     # Build auth headers
     request_headers: dict[str, str] = {}
@@ -93,12 +101,12 @@ async def vault_test(
         oauth2_parts = validate_oauth2_secret(entry.username, entry.secret)
         if oauth2_parts is None:
             return {
-                "status": "error",
-                "test": "FAIL",
-                "reason": (
+                **error_response(
+                    INVALID_OAUTH2_FORMAT,
                     f"Credential '{alias}' has invalid OAuth2 format. "
-                    f"Expected username='client_id|client_secret', secret='token_url|scope'."
+                    f"Expected username='client_id|client_secret', secret='token_url|scope'.",
                 ),
+                "test": "FAIL",
             }
         client_id, client_secret, token_url, scope = oauth2_parts
         try:
@@ -114,18 +122,15 @@ async def vault_test(
                 },
             )
             return {
-                "status": "error",
+                **error_response(HTTP_REQUEST_FAILED, f"OAuth2 token fetch failed: {e}"),
                 "test": "FAIL",
-                "reason": f"OAuth2 token fetch failed: {e}",
             }
     elif entry.auth_type == "web_login":
-        return {
-            "status": "error",
-            "message": (
-                f"Credential '{alias}' is type 'web_login'. "
-                f"Use coffer_web_login to test browser-based credentials."
-            ),
-        }
+        return error_response(
+            CREDENTIAL_WRONG_TYPE,
+            f"Credential '{alias}' is type 'web_login'. "
+            "Use coffer_web_login to test browser-based credentials.",
+        )
 
     # Make the test request
     start = time.time()
@@ -170,8 +175,7 @@ async def vault_test(
             },
         )
         return {
-            "status": "error",
+            **error_response(HTTP_REQUEST_FAILED, error_msg),
             "test": "FAIL",
-            "reason": error_msg,
             "latency_ms": latency_ms,
         }

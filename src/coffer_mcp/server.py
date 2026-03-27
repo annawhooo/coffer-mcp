@@ -22,6 +22,7 @@ import json
 import threading
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 from coffer_mcp.audit import AuditLogger
 from coffer_mcp.browser.playwright_bridge import (
@@ -92,7 +93,7 @@ def _get_audit() -> AuditLogger:
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True))
 def coffer_list() -> str:
     """
     List all stored credentials. Returns aliases and metadata only — never
@@ -132,8 +133,9 @@ async def coffer_http_request(
         headers_dict = json.loads(headers) if headers else None
         params_dict = json.loads(params) if params else None
     except json.JSONDecodeError as e:
-        err = {"status": "error", "message": f"Invalid JSON: {e}"}
-        return json.dumps(err, indent=2)
+        from coffer_mcp.errors import INVALID_JSON, error_response
+
+        return json.dumps(error_response(INVALID_JSON, f"Invalid JSON: {e}"), indent=2)
 
     result = await _vault_http_request(
         store=_get_store(),
@@ -215,7 +217,7 @@ async def coffer_web_fetch(
     return json.dumps(result, indent=2)
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(destructiveHint=True))
 async def coffer_web_logout(alias: str) -> str:
     """
     Close an authenticated web session.
@@ -251,7 +253,7 @@ async def coffer_test(alias: str, url: str = "") -> str:
     return json.dumps(result, indent=2)
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True))
 def coffer_audit(alias: str = "", limit: int = 20) -> str:
     """
     View recent audit log entries and verify chain integrity.

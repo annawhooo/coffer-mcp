@@ -221,7 +221,9 @@ class TestAAD:
         )
 
         # Swap the ciphertext+nonce between the two entries
-        blobs = json.loads(store_path.read_text(encoding="utf-8"))
+        raw = json.loads(store_path.read_text(encoding="utf-8"))
+        # Handle both envelope format (v2) and bare list (v1)
+        blobs = raw["credentials"] if isinstance(raw, dict) else raw
         blobs[0]["ciphertext"], blobs[1]["ciphertext"] = (
             blobs[1]["ciphertext"],
             blobs[0]["ciphertext"],
@@ -230,7 +232,11 @@ class TestAAD:
             blobs[1]["nonce"],
             blobs[0]["nonce"],
         )
-        store_path.write_text(json.dumps(blobs), encoding="utf-8")
+        if isinstance(raw, dict):
+            raw["credentials"] = blobs
+            store_path.write_text(json.dumps(raw), encoding="utf-8")
+        else:
+            store_path.write_text(json.dumps(blobs), encoding="utf-8")
 
         # Decryption should fail because AAD (alias) doesn't match
         store2 = EncryptedStore(master_key, store_path)

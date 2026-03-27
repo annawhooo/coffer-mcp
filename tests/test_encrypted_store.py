@@ -109,12 +109,12 @@ class TestEncryptedStore:
             EncryptedStore(b"too-short", tmp_path / "creds.json")
 
     def test_metadata_never_contains_secret(self, sample_entry):
-        """The metadata() method should never include the secret."""
+        """The metadata() method should never include the secret or username."""
         meta = sample_entry.metadata()
         assert "secret" not in meta
         assert "password" not in meta
+        assert "username" not in meta  # username is sensitive for many auth types
         assert meta["alias"] == "test-api"
-        assert meta["username"] == "testuser@example.com"
 
     def test_multiple_credentials(self, store):
         """Store should handle multiple credentials independently."""
