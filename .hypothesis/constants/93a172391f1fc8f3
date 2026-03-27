@@ -1,4 +1,0 @@
-# file: C:\Users\Anna\PycharmProjects\coffer-mcp\src\coffer_mcp\server.py
-# hypothesis_version: 6.151.9
-
-[b'coffer-audit-hmac:', 5000, 'Coffer', 'GET', '__main__', 'chain_integrity', 'chain_valid', 'error', 'events', 'message', 'status', 'stdio', 'total_events']

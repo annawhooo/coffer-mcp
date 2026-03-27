@@ -1,4 +1,0 @@
-# file: C:\Users\Anna\PycharmProjects\coffer-mcp\src\coffer_mcp\audit\logger.py
-# hypothesis_version: 6.151.9
-
-[',', '.coffer', ':', 'Audit log is empty', 'a', 'alias', 'audit.jsonl', 'details', 'event_id', 'event_type', 'genesis', 'hash', 'prev_hash', 'r', 'status', 'success', 'timestamp', 'utf-8']

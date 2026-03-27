@@ -1,4 +1,0 @@
-# file: C:\Users\Anna\PycharmProjects\coffer-mcp\src\coffer_mcp\tools\vault_list.py
-# hypothesis_version: 6.151.9
-
-[86400, '*', 'EXPIRED', 'EXPIRING_SOON', 'active', 'count', 'credential.listed', 'expires_at', 'status', 'success']

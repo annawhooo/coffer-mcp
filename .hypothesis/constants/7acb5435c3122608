@@ -1,4 +1,0 @@
-# file: C:\Users\Anna\PycharmProjects\coffer-mcp\src\coffer_mcp\tools\vault_web_login.py
-# hypothesis_version: 6.151.9
-
-[30.0, 400, 'Raw HTML', 'Unknown', 'actual', 'content', 'content_length', 'credential_deleted', 'email', 'error', 'failure', 'format', 'html', 'login_url', 'markdown', 'message', 'no_session', 'not_found', 'ok', 'password', 'reason', 'replace', 'session_active', 'status', 'status_code', 'success', 'title', 'url', 'url_not_allowed', 'utf-8', 'web_fetch.failed', 'web_fetch.success', 'web_login', 'web_login.failed', 'web_login.success', 'wrong_auth_type']
