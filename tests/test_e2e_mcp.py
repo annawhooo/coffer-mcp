@@ -229,7 +229,7 @@ class TestCofferHttpRequest:
             )
 
         data = _json(result)
-        assert data["status"] in ("success", "ok")
+        assert data["status"] == "ok"
         assert data["status_code"] == 200
         assert "sk-test-secret-12345" not in _text(result)
 

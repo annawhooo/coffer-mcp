@@ -52,6 +52,9 @@ class AuditLogger:
             self._path.touch()
         secure_file(self._path)
         self._event_counter = self._count_events()
+        # Cache the last hash to avoid re-reading the entire log on each write.
+        # Initialized from disk on startup, then updated in memory after each append.
+        self._last_hash = self._read_last_hash_from_disk()
 
     def log(
         self,
@@ -74,7 +77,7 @@ class AuditLogger:
         """
         with self._lock.acquire():
             self._event_counter += 1
-            prev_hash = self._get_last_hash()
+            prev_hash = self._last_hash
             timestamp = time.time()
 
             event_data = {
@@ -91,9 +94,10 @@ class AuditLogger:
             event_hash = self._compute_hash(event_data)
             event_data["hash"] = event_hash
 
-            # Append to log
+            # Append to log and update cached hash
             with open(self._path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(event_data) + "\n")
+            self._last_hash = event_hash
 
             return AuditEvent(**event_data)
 
@@ -142,12 +146,26 @@ class AuditLogger:
 
     # -- internal helpers ----------------------------------------------------
 
-    def _get_last_hash(self) -> str:
-        """Get the hash of the most recent log entry, or 'genesis' if empty."""
-        entries = self._read_all()
-        if not entries:
-            return "genesis"
-        return entries[-1].get("hash", "genesis")
+    def _read_last_hash_from_disk(self) -> str:
+        """Read the hash of the last entry from disk. Used at init only."""
+        try:
+            with open(self._path, "rb") as f:
+                # Seek to end, then scan backwards for the last newline
+                f.seek(0, 2)
+                size = f.tell()
+                if size == 0:
+                    return "genesis"
+                # Read last 4KB — enough to contain the last JSON line
+                read_size = min(4096, size)
+                f.seek(size - read_size)
+                chunk = f.read().decode("utf-8", errors="replace")
+                lines = chunk.strip().split("\n")
+                if lines:
+                    last = json.loads(lines[-1])
+                    return last.get("hash", "genesis")
+        except (FileNotFoundError, json.JSONDecodeError, KeyError):
+            pass
+        return "genesis"
 
     def _compute_hash(self, data: dict) -> str:
         """

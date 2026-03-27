@@ -1,0 +1,4 @@
+# file: C:\Users\Anna\PycharmProjects\coffer-mcp\src\coffer_mcp\store\keychain.py
+# hypothesis_version: 6.151.9
+
+[384, 600000, '.coffer', '.master-key', '/grant:r', '/inheritance:r', 'COFFER_MASTER_KEY', 'USERNAME', 'coffer-mcp', 'icacls', 'key', 'master-key', 'salt', 'sha256', 'utf-8', 'win32']

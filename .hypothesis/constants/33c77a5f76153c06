@@ -1,0 +1,4 @@
+# file: C:\Users\Anna\PycharmProjects\coffer-mcp\src\coffer_mcp\store\encrypted_store.py
+# hypothesis_version: 6.151.9
+
+['.coffer', '.tmp', 'GET', 'alias', 'allowed_methods', 'allowed_urls', 'auth_type', 'ciphertext', 'created_at', 'credentials.json', 'description', 'expires_at', 'nonce', 'r', 'rotated_at', 'secret', 'username', 'utf-8', 'w']

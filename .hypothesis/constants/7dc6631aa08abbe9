@@ -1,0 +1,4 @@
+# file: C:\Users\Anna\PycharmProjects\coffer-mcp\src\coffer_mcp\store\backup.py
+# hypothesis_version: 6.151.9
+
+[600000, 'COFFER-BACKUP', 'GET', 'alias', 'allowed_methods', 'allowed_urls', 'auth_type', 'ciphertext', 'count', 'created_at', 'credential_count', 'credentials', 'description', 'error', 'errors', 'expires_at', 'exported_at', 'imported', 'magic', 'message', 'nonce', 'ok', 'path', 'rotated_at', 'salt', 'secret', 'sha256', 'skipped', 'status', 'total_in_backup', 'username', 'utf-8', 'version']

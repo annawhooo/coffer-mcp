@@ -64,10 +64,15 @@ async def vault_web_login(
         return {"status": "error", "message": f"No credential found with alias '{alias}'"}
 
     if entry.auth_type != "web_login":
-        audit.log("web_login.failed", alias, "failure", {"reason": "wrong_auth_type"})
+        audit.log(
+            "web_login.failed",
+            alias,
+            "failure",
+            {"reason": "wrong_auth_type", "actual": entry.auth_type},
+        )
         return {
             "status": "error",
-            "message": f"Credential '{alias}' is type '{entry.auth_type}', not 'web_login'",
+            "message": f"Credential '{alias}' is not configured for web login.",
         }
 
     # 2. Validate login_url against allowlist

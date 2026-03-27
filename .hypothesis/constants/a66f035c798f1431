@@ -1,0 +1,4 @@
+# file: C:\Users\Anna\PycharmProjects\coffer-mcp\src\coffer_mcp\tools\oauth2.py
+# hypothesis_version: 6.151.9
+
+[30.0, 3600, 'Bearer', 'access_token', 'client_credentials', 'client_id', 'client_secret', 'expires_at', 'expires_in', 'grant_type', 'scope', 'token_type']

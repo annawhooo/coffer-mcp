@@ -1,0 +1,4 @@
+# file: C:\Users\Anna\PycharmProjects\coffer-mcp\src\coffer_mcp\security.py
+# hypothesis_version: 6.151.9
+
+[1024, 60000, 200000, '"', "'", '/', '<!--.*?-->', '<script', 'Bearer\\s+', 'DELETE', 'GET', 'HEAD', 'OPTIONS', 'PATCH', 'POST', 'PUT', '[REDACTED]', 'authorization', 'connection', 'content-length', 'cookie', 'eval(', 'expression(', 'forwarded', 'host', 'http://', 'https://', 'import(', 'javascript:', 'onerror=', 'onload=', 'proxy-authorization', 'set-cookie', 'transfer-encoding', 'upgrade', 'url(', 'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'x-real-ip', '|']
