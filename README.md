@@ -85,6 +85,10 @@ Add to your `claude_desktop_config.json`:
 > "Test my API credential"
 > → Claude calls `coffer_test` → `{ test: "PASS", status_code: 200, latency_ms: 142 }`
 
+> "Test my API credential against an auth-enforcing endpoint"
+> → Claude calls `coffer_test` with `expected_status: 200`
+> → `{ test: "FAIL", status_code: 401, expected_status: 200 }` — catches false positives
+
 > "Fetch the latest article from my blog"
 > → Claude calls `coffer_web_login` then `coffer_web_fetch`
 > → You get the article content, Claude never sees your password
@@ -95,7 +99,7 @@ Add to your `claude_desktop_config.json`:
 |---|---|---|
 | `coffer_list` | List stored credentials | Aliases, types, expiry status |
 | `coffer_http_request` | Authenticated API call | Response body (sanitized) |
-| `coffer_test` | Verify credential works | Pass/fail, status code, latency |
+| `coffer_test` | Verify credential works | Pass/fail, status code, latency. Optional `expected_status` for strict validation. |
 | `coffer_web_login` | Log into a website | `{ status: "ok" }` |
 | `coffer_web_fetch` | Fetch page content | Clean markdown |
 | `coffer_web_logout` | Close web session | `{ status: "ok" }` |
@@ -111,6 +115,7 @@ coffer add               # Add a credential (interactive)
 coffer add --expires 90d # Add with 90-day expiry
 coffer list              # List credentials (no secrets, shows expiry)
 coffer test <alias>      # Test a credential works (HEAD request)
+coffer test <alias> --url https://api.example.com/me --expected-status 200  # Strict test
 coffer rotate <alias>    # Rotate the secret for a credential
 coffer rekey             # Re-encrypt all credentials with a new passphrase
 coffer export <file>     # Encrypted backup to file
@@ -151,6 +156,7 @@ See [SECURITY.md](SECURITY.md) for the full threat model.
 - HMAC-SHA-256 audit chain (keyed to master key) — detects tampering
 - Warning emitted when audit logger runs without HMAC key
 - Atomic backup writes (write-to-temp + rename) prevent corruption on crash
+- Audit status reflects target server response: `auth_rejected` when credentials are injected but the server returns 401/403, distinguishing between vault-level success and target-level failure
 
 **Concurrency:**
 - Cross-platform file locking (fcntl on Unix, Win32 LockFileEx on Windows) for credential store and audit log
