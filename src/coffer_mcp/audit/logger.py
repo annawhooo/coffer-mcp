@@ -213,5 +213,28 @@ class AuditLogger:
         return entries
 
     def _count_events(self) -> int:
-        """Count the number of existing events."""
-        return len(self._read_all())
+        """Read the highest event counter from the last log entry.
+
+        Parsing the last entry's event_id (rather than counting lines)
+        ensures monotonicity even if earlier entries are lost to
+        truncation, rotation, or corruption.
+        """
+        try:
+            with open(self._path, "rb") as f:
+                f.seek(0, 2)
+                size = f.tell()
+                if size == 0:
+                    return 0
+                read_size = min(4096, size)
+                f.seek(size - read_size)
+                chunk = f.read().decode("utf-8", errors="replace")
+                lines = chunk.strip().split("\n")
+                if lines:
+                    last = json.loads(lines[-1])
+                    event_id = last.get("event_id", "")
+                    # event_id format: "evt_000042"
+                    if event_id.startswith("evt_"):
+                        return int(event_id[4:])
+        except (FileNotFoundError, json.JSONDecodeError, KeyError, ValueError):
+            pass
+        return 0
