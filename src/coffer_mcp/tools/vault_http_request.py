@@ -259,11 +259,17 @@ async def vault_http_request(
         clean_text = sanitize_response(response_text, entry, extra_secrets=extra_secrets)
         clean_text = sanitize_content(clean_text)
 
-        # 8. Audit success
+        # 8. Audit — status reflects actual auth outcome
+        if response.status_code in (401, 403):
+            audit_status = "auth_rejected"
+        elif response.status_code >= 400:
+            audit_status = "failure"
+        else:
+            audit_status = "success"
         audit.log(
             "credential.used",
             alias,
-            "success",
+            audit_status,
             {
                 "url": url,
                 "method": method.upper(),

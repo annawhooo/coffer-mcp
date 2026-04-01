@@ -39,11 +39,21 @@ async def vault_test(
     alias: str,
     url: str = "",
     method: str = "HEAD",
+    expected_status: int | None = None,
 ) -> dict[str, Any]:
     """
     Test a stored credential by making a lightweight authenticated request.
 
     If no URL is provided, uses the first URL in the credential's allowlist.
+
+    Args:
+        expected_status: If set, the test PASSes only when the response
+            status code matches this value exactly (e.g. 200).  This
+            catches the case where a HEAD to the API root returns 200
+            regardless of auth — set expected_status=200 and test
+            against an endpoint that actually enforces authentication.
+            When None (default), the legacy behaviour applies: any
+            status < 400 is a PASS.
 
     Returns:
         Dict with test result: status_code, latency, and pass/fail.
@@ -187,7 +197,21 @@ async def vault_test(
                 headers=request_headers,
             )
         latency_ms = int((time.time() - start) * 1000)
-        passed = response.status_code < 400
+
+        # Determine pass/fail
+        if expected_status is not None:
+            passed = response.status_code == expected_status
+        else:
+            passed = response.status_code < 400
+
+        # Distinguish auth rejection from generic failure in audit
+        if response.status_code in (401, 403):
+            audit_status = "auth_rejected"
+        elif passed:
+            audit_status = "success"
+        else:
+            audit_status = "failure"
+
         result = {
             "status": "ok",
             "test": "PASS" if passed else "FAIL",
@@ -196,10 +220,12 @@ async def vault_test(
             "url": test_url,
             "method": method.upper(),
         }
+        if expected_status is not None:
+            result["expected_status"] = expected_status
         audit.log(
             "credential.test",
             alias,
-            "success" if passed else "failure",
+            audit_status,
             result,
         )
         return result
