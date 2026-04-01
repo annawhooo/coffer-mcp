@@ -40,6 +40,7 @@ async def vault_test(
     url: str = "",
     method: str = "HEAD",
     expected_status: int | None = None,
+    reason: str = "",
 ) -> dict[str, Any]:
     """
     Test a stored credential by making a lightweight authenticated request.
@@ -222,11 +223,14 @@ async def vault_test(
         }
         if expected_status is not None:
             result["expected_status"] = expected_status
+        audit_details = dict(result)
+        if reason:
+            audit_details["reason"] = reason
         audit.log(
             "credential.test",
             alias,
             audit_status,
-            result,
+            audit_details,
         )
         return result
 

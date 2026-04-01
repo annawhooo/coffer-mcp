@@ -113,6 +113,7 @@ async def coffer_http_request(
     body: str = "",
     headers: str = "",
     params: str = "",
+    reason: str = "",
 ) -> str:
     """
     Make an authenticated HTTP request using a stored credential.
@@ -127,6 +128,9 @@ async def coffer_http_request(
         body: Optional JSON body as a string (for POST/PUT/PATCH).
         headers: Optional additional headers as a JSON string.
         params: Optional query parameters as a JSON string.
+        reason: Why you are accessing this credential. Brief task context
+            for the audit log (e.g., "checking repo status for user's PR
+            review request"). Logged but never affects request behavior.
     """
     try:
         body_dict = json.loads(body) if body else None
@@ -146,6 +150,7 @@ async def coffer_http_request(
         body=body_dict,
         headers=headers_dict,
         params=params_dict,
+        reason=reason,
     )
     return json.dumps(result, indent=2)
 
@@ -194,6 +199,7 @@ async def coffer_web_fetch(
     alias: str,
     url: str,
     extract_content: bool = True,
+    reason: str = "",
 ) -> str:
     """
     Fetch a page from an authenticated web session and return clean content.
@@ -206,6 +212,8 @@ async def coffer_web_fetch(
         url: The page URL to fetch.
         extract_content: If True, extract main article content as markdown.
                         If False, return raw HTML.
+        reason: Why you are fetching this page. Brief task context
+            for the audit log. Logged but never affects fetch behavior.
     """
     result = await _browser_web_fetch(
         store=_get_store(),
@@ -213,6 +221,7 @@ async def coffer_web_fetch(
         alias=alias,
         url=url,
         extract_content=extract_content,
+        reason=reason,
     )
     return json.dumps(result, indent=2)
 
@@ -230,7 +239,7 @@ async def coffer_web_logout(alias: str) -> str:
 
 
 @mcp.tool()
-async def coffer_test(alias: str, url: str = "", expected_status: int | None = None) -> str:
+async def coffer_test(alias: str, url: str = "", expected_status: int | None = None, reason: str = "") -> str:
     """
     Test a stored credential by making a lightweight authenticated request.
 
@@ -247,6 +256,8 @@ async def coffer_test(alias: str, url: str = "", expected_status: int | None = N
             When set, the test PASSes only if the response matches exactly.
             Use this with an auth-enforcing endpoint to catch false positives
             from HEAD requests that return 200 regardless of credentials.
+        reason: Why you are testing this credential. Brief task context
+            for the audit log. Logged but never affects test behavior.
     """
     result = await _vault_test(
         store=_get_store(),
@@ -254,6 +265,7 @@ async def coffer_test(alias: str, url: str = "", expected_status: int | None = N
         alias=alias,
         url=url,
         expected_status=expected_status,
+        reason=reason,
     )
     return json.dumps(result, indent=2)
 
