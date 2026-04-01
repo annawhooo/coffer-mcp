@@ -194,6 +194,7 @@ async def browser_web_fetch(
     alias: str,
     url: str,
     extract_content: bool = True,
+    reason: str = "",
 ) -> dict[str, Any]:
     """
     Fetch a page using an authenticated browser session and return clean content.
@@ -204,6 +205,8 @@ async def browser_web_fetch(
         alias: Credential alias with an active browser session.
         url: The page URL to fetch.
         extract_content: If True, extract main content as markdown.
+        reason: Why you are fetching this page. Brief task context
+            for the audit log. Logged but never affects fetch behavior.
 
     Returns:
         Dict with status, title, and page content as markdown.
@@ -328,11 +331,14 @@ async def browser_web_fetch(
     markdown_content = sanitize_response(markdown_content, entry)
     markdown_content = sanitize_content(markdown_content)
 
+    fetch_audit_details = {"url": url, "title": title, "content_length": len(markdown_content)}
+    if reason:
+        fetch_audit_details["reason"] = reason
     audit.log(
         "browser_fetch.success",
         alias,
         "success",
-        {"url": url, "title": title, "content_length": len(markdown_content)},
+        fetch_audit_details,
     )
 
     return {

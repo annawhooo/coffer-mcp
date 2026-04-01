@@ -51,6 +51,7 @@ async def vault_http_request(
     body: dict[str, Any] | None = None,
     headers: dict[str, str] | None = None,
     params: dict[str, str] | None = None,
+    reason: str = "",
 ) -> dict[str, Any]:
     """
     Make an authenticated HTTP request using a stored credential.
@@ -105,11 +106,14 @@ async def vault_http_request(
 
     # 3. Enforce URL allowlist
     if not check_url_allowed(entry, url):
+        deny_details: dict[str, Any] = {"reason": "url_not_allowed", "url": url}
+        if reason:
+            deny_details["stated_reason"] = reason
         audit.log(
             "credential.access_denied",
             alias,
             "failure",
-            {"reason": "url_not_allowed", "url": url},
+            deny_details,
         )
         return error_response(
             URL_NOT_ALLOWED,
@@ -266,15 +270,18 @@ async def vault_http_request(
             audit_status = "failure"
         else:
             audit_status = "success"
+        audit_details: dict[str, Any] = {
+            "url": url,
+            "method": method.upper(),
+            "status_code": response.status_code,
+        }
+        if reason:
+            audit_details["reason"] = reason
         audit.log(
             "credential.used",
             alias,
             audit_status,
-            {
-                "url": url,
-                "method": method.upper(),
-                "status_code": response.status_code,
-            },
+            audit_details,
         )
 
         return {
@@ -298,10 +305,13 @@ async def vault_http_request(
             r"\1[REDACTED]",
             error_msg,
         )
+        error_audit_details: dict[str, Any] = {"url": url, "method": method.upper(), "error": error_msg}
+        if reason:
+            error_audit_details["reason"] = reason
         audit.log(
             "credential.used",
             alias,
             "failure",
-            {"url": url, "method": method.upper(), "error": error_msg},
+            error_audit_details,
         )
         return error_response(HTTP_REQUEST_FAILED, f"HTTP request failed: {error_msg}")
