@@ -51,6 +51,12 @@ async def vault_test(
     # Validate HTTP method
     validated_method = validate_http_method(method)
     if validated_method is None:
+        audit.log(
+            "credential.test",
+            alias,
+            "failure",
+            {"reason": "invalid_http_method", "method": method},
+        )
         return error_response(
             INVALID_HTTP_METHOD,
             f"Invalid HTTP method '{method}'."
@@ -61,16 +67,34 @@ async def vault_test(
     try:
         entry = store.get(alias)
     except KeyError:
+        audit.log(
+            "credential.test",
+            alias,
+            "failure",
+            {"reason": "credential_not_found"},
+        )
         return error_response(CREDENTIAL_NOT_FOUND, f"No credential found with alias '{alias}'")
 
     # Check expiry
     if entry.expires_at and time.time() > entry.expires_at:
+        audit.log(
+            "credential.test",
+            alias,
+            "failure",
+            {"reason": "credential_expired"},
+        )
         return {**error_response(CREDENTIAL_EXPIRED, "credential_expired"), "test": "FAIL"}
 
     # Determine test URL
     test_url = url
     if not test_url:
         if not entry.allowed_urls:
+            audit.log(
+                "credential.test",
+                alias,
+                "failure",
+                {"reason": "no_allowed_urls"},
+            )
             return error_response(
                 URL_NOT_ALLOWED,
                 "No allowed URLs configured; pass a URL to test.",
@@ -78,6 +102,12 @@ async def vault_test(
         test_url = entry.allowed_urls[0].replace("/*", "/").rstrip("*")
 
     if not check_url_allowed(entry, test_url):
+        audit.log(
+            "credential.test",
+            alias,
+            "failure",
+            {"reason": "url_not_allowed", "url": test_url},
+        )
         return error_response(URL_NOT_ALLOWED, f"URL '{test_url}' is not in the allowlist.")
 
     # Build auth headers
@@ -100,6 +130,12 @@ async def vault_test(
 
         oauth2_parts = validate_oauth2_secret(entry.username, entry.secret)
         if oauth2_parts is None:
+            audit.log(
+                "credential.test",
+                alias,
+                "failure",
+                {"reason": "invalid_oauth2_format"},
+            )
             return {
                 **error_response(
                     INVALID_OAUTH2_FORMAT,
@@ -126,6 +162,12 @@ async def vault_test(
                 "test": "FAIL",
             }
     elif entry.auth_type == "web_login":
+        audit.log(
+            "credential.test",
+            alias,
+            "failure",
+            {"reason": "wrong_type", "auth_type": entry.auth_type},
+        )
         return error_response(
             CREDENTIAL_WRONG_TYPE,
             f"Credential '{alias}' is type 'web_login'. "
