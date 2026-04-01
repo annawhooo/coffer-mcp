@@ -230,7 +230,7 @@ async def coffer_web_logout(alias: str) -> str:
 
 
 @mcp.tool()
-async def coffer_test(alias: str, url: str = "") -> str:
+async def coffer_test(alias: str, url: str = "", expected_status: int | None = None) -> str:
     """
     Test a stored credential by making a lightweight authenticated request.
 
@@ -243,12 +243,17 @@ async def coffer_test(alias: str, url: str = "") -> str:
     Args:
         alias: The credential alias to test.
         url: Optional URL to test against.
+        expected_status: Optional expected HTTP status code (e.g. 200).
+            When set, the test PASSes only if the response matches exactly.
+            Use this with an auth-enforcing endpoint to catch false positives
+            from HEAD requests that return 200 regardless of credentials.
     """
     result = await _vault_test(
         store=_get_store(),
         audit=_get_audit(),
         alias=alias,
         url=url,
+        expected_status=expected_status,
     )
     return json.dumps(result, indent=2)
 
