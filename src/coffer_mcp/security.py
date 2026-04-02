@@ -67,6 +67,18 @@ _INJECTION_PATTERNS = [
     re.compile(r"[\u200b\u200c\u200d\u2060\ufeff\u00ad]+"),
 ]
 
+# ---------------------------------------------------------------------------
+# Masked echo detection (Fix A — prefix/suffix leakage)
+# ---------------------------------------------------------------------------
+
+# Minimum secret length to attempt prefix/suffix scrubbing.
+# Below this, fragments are too short to be meaningful.
+_MIN_SECRET_LEN_FOR_FRAGMENT_SCRUB = 8
+
+# Characters commonly used by APIs to mask/redact part of a secret.
+# Covers: * • · × ● ◦ █ ▪ … and literal 'x'/'X' used as mask fill.
+_MASK_CHAR_CLASS = r"[.*\u2022\u00b7\u00d7\u25cf\u25e6\u2588\u25aa\u2026xX]"
+
 
 # ---------------------------------------------------------------------------
 # Input validation
@@ -279,6 +291,56 @@ def sanitize_response(
     return sanitized
 
 
+def _scrub_masked_echoes(text: str, secret: str) -> str:
+    """
+    Scrub masked/partial echoes of a secret from response text.
+
+    Many APIs return error messages containing a masked version of the
+    credential: the first and/or last few characters are visible, with
+    the middle replaced by asterisks or similar mask characters.
+
+    Example: Stripe returns ``sl_test_**********************7890``
+    for a key like ``sl_test_abc123def456ghi7890``.
+
+    This function derives prefix and suffix fragments from the known
+    secret and builds regex patterns to catch masked echoes.
+    """
+    if len(secret) < _MIN_SECRET_LEN_FOR_FRAGMENT_SCRUB:
+        return text
+
+    # Derive prefix and suffix lengths, clamped to sensible bounds.
+    prefix_len = max(3, min(8, len(secret) // 3))
+    suffix_len = max(3, min(4, len(secret) // 4))
+
+    prefix = secret[:prefix_len]
+    suffix = secret[-suffix_len:]
+
+    escaped_prefix = re.escape(prefix)
+    escaped_suffix = re.escape(suffix)
+
+    # At least 4 consecutive mask characters to count as a masked run.
+    mask_run = _MASK_CHAR_CLASS + r"{4,}"
+
+    # Pattern 1 (highest priority): prefix + mask + suffix
+    # e.g. "sl_test_**********************7890"
+    pat_full = escaped_prefix + mask_run + escaped_suffix
+    text = re.sub(pat_full, "[REDACTED]", text)
+
+    # Pattern 2: prefix + mask (no suffix visible)
+    # e.g. "sl_test_**********************"
+    pat_prefix = escaped_prefix + mask_run
+    text = re.sub(pat_prefix, "[REDACTED]", text)
+
+    # Pattern 3: mask + suffix (no prefix visible)
+    # Require 8+ mask chars to reduce false positives since the suffix
+    # alone (often just 4 digits) is more prone to coincidental matches.
+    mask_run_long = _MASK_CHAR_CLASS + r"{8,}"
+    pat_suffix = mask_run_long + escaped_suffix
+    text = re.sub(pat_suffix, "[REDACTED]", text)
+
+    return text
+
+
 def _scrub_secret(text: str, secret: str) -> str:
     """
     Scrub a single secret from text in multiple representations.
@@ -309,6 +371,9 @@ def _scrub_secret(text: str, secret: str) -> str:
         r"api[_-]?key[\"']?\s*[:=]\s*[\"']?" + escaped,
     ]:
         text = re.sub(pattern, "[REDACTED]", text, flags=re.IGNORECASE)
+
+    # 5. Masked echo detection (prefix/suffix leakage)
+    text = _scrub_masked_echoes(text, secret)
 
     return text
 
