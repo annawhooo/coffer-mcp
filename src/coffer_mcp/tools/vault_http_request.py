@@ -309,7 +309,9 @@ async def vault_http_request(
             error_msg,
         )
         error_audit_details: dict[str, Any] = {
-            "url": url, "method": method.upper(), "error": error_msg,
+            "url": url,
+            "method": method.upper(),
+            "error": error_msg,
         }
         if reason:
             error_audit_details["agent_reason"] = reason
