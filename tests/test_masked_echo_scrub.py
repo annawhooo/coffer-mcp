@@ -71,8 +71,7 @@ class TestMaskedEchoDirect:
         """Stripe pattern: prefix + asterisks + last 4 digits."""
         secret = "sl_test_abc123def456ghi7890"
         text = (
-            '{"error": {"message": "Invalid API Key provided:'
-            ' sl_test_**********************7890"}}'
+            '{"error": {"message": "Invalid API Key provided: sl_test_**********************7890"}}'
         )
         result = _scrub_masked_echoes(text, secret)
         assert "sl_test_" not in result
@@ -139,8 +138,7 @@ class TestMaskedEchoDirect:
         """Multiple masked echoes in one response body."""
         secret = "sl_test_abc123def456ghi7890"
         text = (
-            'First: "sl_test_**********************7890", '
-            'second: "sl_test_**********************"'
+            'First: "sl_test_**********************7890", second: "sl_test_**********************"'
         )
         result = _scrub_masked_echoes(text, secret)
         assert "sl_test_" not in result
@@ -180,8 +178,7 @@ class TestMaskedEchoEndToEnd:
     def test_github_masked_echo(self, github_entry):
         """GitHub-style masked token in error response."""
         response = (
-            '{"message": "Bad credentials",'
-            ' "token": "ghp_a1b2****************************qrst"}'
+            '{"message": "Bad credentials", "token": "ghp_a1b2****************************qrst"}'
         )
         sanitized = sanitize_response(response, github_entry)
         assert "ghp_a1b2" not in sanitized
@@ -207,9 +204,7 @@ class TestMaskedEchoEndToEnd:
         # Derived prefix is "eyJhbGci" (8 chars) but server echoed 7.
         # Pattern 3 (mask+suffix) catches "************************here",
         # leaving a 7-char prefix residual "eyJhbGc".
-        sanitized = sanitize_response(
-            response, stripe_entry, extra_secrets=[oauth_token]
-        )
+        sanitized = sanitize_response(response, stripe_entry, extra_secrets=[oauth_token])
         assert "here" not in sanitized
         assert "[REDACTED]" in sanitized
 
@@ -229,8 +224,7 @@ class TestMaskedEchoEndToEnd:
     def test_exact_and_masked_both_scrubbed(self, stripe_entry):
         """Response contains both the exact secret AND a masked echo."""
         response = (
-            'Key "sl_test_abc123def456ghi7890" failed. '
-            'Masked: sl_test_**********************7890'
+            'Key "sl_test_abc123def456ghi7890" failed. Masked: sl_test_**********************7890'
         )
         sanitized = sanitize_response(response, stripe_entry)
         assert "sl_test_" not in sanitized
