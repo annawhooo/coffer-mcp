@@ -42,7 +42,9 @@ class AuditLogger:
         ~/.coffer/audit.jsonl
     """
 
-    def __init__(self, log_path: Path | None = None, hmac_key: bytes | None = None, source: str = ""):
+    def __init__(
+        self, log_path: Path | None = None, hmac_key: bytes | None = None, source: str = ""
+    ):
         self._path = log_path or Path.home() / ".coffer" / "audit.jsonl"
         self._hmac_key = hmac_key
         self._source = source
