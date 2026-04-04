@@ -138,6 +138,65 @@ Claude Desktop and Coffer. This channel has no mutual authentication:
 This is a fundamental limitation of the MCP protocol, not specific to Coffer.
 Physical and user-level host security is the required mitigation.
 
+## Audit Event Reference
+
+### Event Types
+
+| Event Type | Emitted By | Description |
+|---|---|---|
+| `credential.created` | CLI `coffer add` | New credential added to vault |
+| `credential.removed` | CLI `coffer remove` | Credential deleted from vault |
+| `credential.rotated` | CLI `coffer rotate` | Credential secret was rotated |
+| `credential.used` | `coffer_http_request` | Credential was used for an HTTP request |
+| `credential.test` | `coffer_test` | Credential was tested (lightweight auth check) |
+| `credential.expired` | `coffer_http_request` | Attempted use of an expired credential |
+| `credential.access_failed` | `coffer_http_request` | Credential alias not found |
+| `credential.access_denied` | `coffer_http_request` | Request blocked by URL/method allowlist |
+| `credential.listed` | `coffer_list` | Credential metadata was listed |
+| `vault.rekeyed` | CLI `coffer rekey` | All credentials re-encrypted with new key |
+| `browser_login.success` | `coffer_web_login` | Browser login completed |
+| `browser_login.failed` | `coffer_web_login` | Browser login failed |
+| `browser_fetch.success` | `coffer_web_fetch` | Page fetched from authenticated session |
+| `browser_fetch.failed` | `coffer_web_fetch` | Page fetch failed |
+
+### Status Values
+
+| Status | Meaning | When Used |
+|---|---|---|
+| `success` | Operation completed as expected | Successful requests (HTTP 2xx/3xx), successful logins, credential creation |
+| `failure` | Operation failed | Credential not found, URL blocked, HTTP 4xx (non-auth), HTTP 5xx, network errors, expired credentials |
+| `auth_rejected` | Credential was injected but the target server returned 401 or 403 | Distinguishes vault-level success (credential resolved and sent) from target-level auth failure |
+
+**Note on 400 responses:** HTTP 400 (Bad Request) is classified as `failure`, not `auth_rejected`. Only 401 and 403 trigger `auth_rejected` status.
+
+### Audit Event Fields
+
+Every audit event contains:
+
+| Field | Type | Description |
+|---|---|---|
+| `event_id` | string | Unique monotonic identifier (`evt_000001`, `evt_000002`, ...) |
+| `event_type` | string | One of the event types above |
+| `alias` | string | The credential alias involved |
+| `status` | string | One of: `success`, `failure`, `auth_rejected` |
+| `source` | string | Where the event originated: `cli` or `mcp` |
+| `details` | object | Context-specific data (URL, method, status code, etc.) |
+| `timestamp` | float | Unix timestamp |
+| `prev_hash` | string | Hash of the previous event (chain linkage) |
+| `hash` | string | HMAC-SHA-256 hash of this event |
+
+The `details` object may contain:
+
+| Field | Context | Description |
+|---|---|---|
+| `reason` | Failure events | System reason (e.g., `url_not_allowed`, `credential_expired`, `not_found`) |
+| `agent_reason` | Any event with a stated reason | The LLM agent's stated justification for the request |
+| `url` | HTTP requests | Target URL |
+| `method` | HTTP requests | HTTP method used |
+| `status_code` | HTTP requests | Response status code from the target server |
+| `expired_at` | Expired credentials | When the credential expired |
+
+
 ## Reporting Vulnerabilities
 
 If you discover a security vulnerability, please report it responsibly

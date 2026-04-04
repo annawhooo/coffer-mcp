@@ -30,6 +30,7 @@
 | 10 | **Compliance alignment** — mapping to NIST 800-53 SC-28, SOC 2 CC6.1; document which controls are satisfied | TODO | 1-2 days |
 | 11 | **Observability** — alerting (N failed auths = lockout), metrics (usage frequency, latency), SIEM/syslog/OpenTelemetry export | TODO | 1 week |
 | 12 | **Multi-user / team support** — RBAC, key escrow, shared vaults; or explicitly document single-user boundary | TODO | Evaluate |
+| 13 | **Fix C: Generic API key pattern scanning** — response body scan for common key patterns (`sk_test_*`, `ghp_*`, `AKIA*`, etc.) regardless of whether they match the stored secret. Catches keys the sanitizer doesn't know about. | TODO | Half day |
 
 ## Completed work
 
@@ -54,3 +55,10 @@
 | Mutation testing with cosmic-ray (100% kill rate) | 2026-03-26 |
 | Structured error codes, MCP ToolAnnotations, store format versioning | 2026-03-26 |
 | Fix: httpx.AsyncClient patch target in E2E tests | 2026-03-27 |
+| Fix A: Masked echo scrubbing (prefix/suffix leakage from API error responses) | 2026-04-04 |
+| Fix: Duplicate event IDs between CLI and MCP (re-read counter under lock) | 2026-04-04 |
+| Fix: Reason field schema — standardized to `agent_reason` across all event types | 2026-04-04 |
+| Enhancement: Source tagging (`cli`/`mcp`) in all audit events | 2026-04-04 |
+| Enhancement: Capture `agent_reason` in expired credential events | 2026-04-04 |
+| Docs: Audit event reference (event types, status values, field schema) | 2026-04-04 |
+| Docs: Default-deny behavior for empty `--allowed-urls` | 2026-04-04 |

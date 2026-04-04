@@ -59,6 +59,10 @@ coffer add --expires 90d           # expires in 90 days
 coffer add --expires 2026-12-31    # expires on a specific date
 ```
 
+> **Default deny:** If you omit `--allowed-urls` (or leave it blank), the credential
+> is blocked from **all** URLs. This is intentional — fail-closed security.
+> You must explicitly list which URLs the credential is allowed to reach.
+
 ### 4. Configure Claude Desktop
 
 Add to your `claude_desktop_config.json`:
