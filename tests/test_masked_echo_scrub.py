@@ -8,7 +8,6 @@ import pytest
 from coffer_mcp.security import _scrub_masked_echoes, sanitize_response
 from coffer_mcp.store.encrypted_store import CredentialEntry
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -71,7 +70,10 @@ class TestMaskedEchoDirect:
     def test_stripe_full_mask(self):
         """Stripe pattern: prefix + asterisks + last 4 digits."""
         secret = "sl_test_abc123def456ghi7890"
-        text = '{"error": {"message": "Invalid API Key provided: sl_test_**********************7890"}}'
+        text = (
+            '{"error": {"message": "Invalid API Key provided:'
+            ' sl_test_**********************7890"}}'
+        )
         result = _scrub_masked_echoes(text, secret)
         assert "sl_test_" not in result
         assert "7890" not in result
@@ -105,7 +107,8 @@ class TestMaskedEchoDirect:
     def test_bullet_mask_chars(self):
         """Unicode bullet (•) used as mask fill."""
         secret = "sl_test_abc123def456ghi7890"
-        text = "Invalid key: sl_test_\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u20227890"
+        bullets = "\u2022" * 22
+        text = f"Invalid key: sl_test_{bullets}7890"
         result = _scrub_masked_echoes(text, secret)
         assert "sl_test_" not in result
         assert "[REDACTED]" in result
@@ -176,7 +179,10 @@ class TestMaskedEchoEndToEnd:
 
     def test_github_masked_echo(self, github_entry):
         """GitHub-style masked token in error response."""
-        response = '{"message": "Bad credentials", "token": "ghp_a1b2****************************qrst"}'
+        response = (
+            '{"message": "Bad credentials",'
+            ' "token": "ghp_a1b2****************************qrst"}'
+        )
         sanitized = sanitize_response(response, github_entry)
         assert "ghp_a1b2" not in sanitized
         assert "qrst" not in sanitized

@@ -239,7 +239,9 @@ async def coffer_web_logout(alias: str) -> str:
 
 
 @mcp.tool()
-async def coffer_test(alias: str, url: str = "", expected_status: int | None = None, reason: str = "") -> str:
+async def coffer_test(
+    alias: str, url: str = "", expected_status: int | None = None, reason: str = ""
+) -> str:
     """
     Test a stored credential by making a lightweight authenticated request.
 
