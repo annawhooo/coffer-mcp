@@ -84,7 +84,7 @@ def _get_audit() -> AuditLogger:
 
                 master_key = get_master_key()
                 hmac_key = hashlib.sha256(b"coffer-audit-hmac:" + master_key).digest()
-                _audit = AuditLogger(hmac_key=hmac_key)
+                _audit = AuditLogger(hmac_key=hmac_key, source="mcp")
     return _audit
 
 

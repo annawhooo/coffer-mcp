@@ -36,7 +36,7 @@ def _get_audit() -> AuditLogger:
 
     master_key = get_master_key()
     hmac_key = hashlib.sha256(b"coffer-audit-hmac:" + master_key).digest()
-    return AuditLogger(hmac_key=hmac_key)
+    return AuditLogger(hmac_key=hmac_key, source="cli")
 
 
 @click.group()
@@ -355,7 +355,7 @@ def rekey():
 
     # 4. Audit the rekey
     hmac_key = hashlib.sha256(b"coffer-audit-hmac:" + new_key).digest()
-    audit = AuditLogger(hmac_key=hmac_key)
+    audit = AuditLogger(hmac_key=hmac_key, source="cli")
     audit.log("vault.rekeyed", "*", "success", {"credentials_rekeyed": rekeyed})
 
     click.echo(f"Successfully re-encrypted {rekeyed} credential(s) with new key.")

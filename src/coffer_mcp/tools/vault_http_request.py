@@ -97,7 +97,10 @@ async def vault_http_request(
             entry.expires_at,
             tz=timezone.utc,
         ).strftime("%Y-%m-%d %H:%M UTC")
-        audit.log("credential.expired", alias, "failure", {"expired_at": exp_str})
+        expired_details: dict[str, Any] = {"expired_at": exp_str}
+        if reason:
+            expired_details["agent_reason"] = reason
+        audit.log("credential.expired", alias, "failure", expired_details)
         return error_response(
             CREDENTIAL_EXPIRED,
             f"Credential '{alias}' expired on {exp_str}. "
@@ -108,7 +111,7 @@ async def vault_http_request(
     if not check_url_allowed(entry, url):
         deny_details: dict[str, Any] = {"reason": "url_not_allowed", "url": url}
         if reason:
-            deny_details["stated_reason"] = reason
+            deny_details["agent_reason"] = reason
         audit.log(
             "credential.access_denied",
             alias,
@@ -276,7 +279,7 @@ async def vault_http_request(
             "status_code": response.status_code,
         }
         if reason:
-            audit_details["reason"] = reason
+            audit_details["agent_reason"] = reason
         audit.log(
             "credential.used",
             alias,
@@ -307,7 +310,7 @@ async def vault_http_request(
         )
         error_audit_details: dict[str, Any] = {"url": url, "method": method.upper(), "error": error_msg}
         if reason:
-            error_audit_details["reason"] = reason
+            error_audit_details["agent_reason"] = reason
         audit.log(
             "credential.used",
             alias,

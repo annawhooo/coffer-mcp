@@ -27,6 +27,7 @@ class AuditEvent:
     event_type: str  # credential.created, credential.used, credential.removed, etc.
     alias: str
     status: str  # success, failure
+    source: str  # "cli", "mcp", or "" for unspecified
     details: dict[str, Any]
     timestamp: float
     prev_hash: str
@@ -41,9 +42,10 @@ class AuditLogger:
         ~/.coffer/audit.jsonl
     """
 
-    def __init__(self, log_path: Path | None = None, hmac_key: bytes | None = None):
+    def __init__(self, log_path: Path | None = None, hmac_key: bytes | None = None, source: str = ""):
         self._path = log_path or Path.home() / ".coffer" / "audit.jsonl"
         self._hmac_key = hmac_key
+        self._source = source
         self._warned_no_hmac = False
         self._lock = FileLock(self._path)
         self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -76,6 +78,12 @@ class AuditLogger:
             The created AuditEvent.
         """
         with self._lock.acquire():
+            # Re-read counter and last_hash from disk under lock.
+            # This prevents duplicate event IDs when multiple processes
+            # (CLI + MCP server) write to the same audit log file.
+            self._event_counter = self._count_events()
+            self._last_hash = self._read_last_hash_from_disk()
+
             self._event_counter += 1
             prev_hash = self._last_hash
             timestamp = time.time()
@@ -85,6 +93,7 @@ class AuditLogger:
                 "event_type": event_type,
                 "alias": alias,
                 "status": status,
+                "source": self._source,
                 "details": details or {},
                 "timestamp": timestamp,
                 "prev_hash": prev_hash,

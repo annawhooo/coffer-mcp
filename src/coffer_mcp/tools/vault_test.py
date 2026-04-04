@@ -88,11 +88,14 @@ async def vault_test(
 
     # Check expiry
     if entry.expires_at and time.time() > entry.expires_at:
+        expired_details: dict[str, Any] = {"reason": "credential_expired"}
+        if reason:
+            expired_details["agent_reason"] = reason
         audit.log(
             "credential.test",
             alias,
             "failure",
-            {"reason": "credential_expired"},
+            expired_details,
         )
         return {**error_response(CREDENTIAL_EXPIRED, "credential_expired"), "test": "FAIL"}
 
@@ -225,7 +228,7 @@ async def vault_test(
             result["expected_status"] = expected_status
         audit_details = dict(result)
         if reason:
-            audit_details["reason"] = reason
+            audit_details["agent_reason"] = reason
         audit.log(
             "credential.test",
             alias,

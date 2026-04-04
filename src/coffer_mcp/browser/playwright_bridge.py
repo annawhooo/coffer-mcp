@@ -333,7 +333,7 @@ async def browser_web_fetch(
 
     fetch_audit_details = {"url": url, "title": title, "content_length": len(markdown_content)}
     if reason:
-        fetch_audit_details["reason"] = reason
+        fetch_audit_details["agent_reason"] = reason
     audit.log(
         "browser_fetch.success",
         alias,
