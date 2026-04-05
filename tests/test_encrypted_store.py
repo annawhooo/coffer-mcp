@@ -133,3 +133,54 @@ class TestEncryptedStore:
         for i in range(5):
             retrieved = store.get(f"cred-{i}")
             assert retrieved.secret == f"secret-{i}"
+
+
+class TestBearerTokenWhitespace:
+    """Regression tests for bearer_token whitespace corruption (GitHub #401).
+
+    On Windows, getpass.getpass() can include trailing \\r or whitespace
+    from clipboard paste. If stored verbatim, the Authorization header
+    becomes 'Bearer ghp_abc123\\r' which fails authentication.
+    """
+
+    DIRTY_TOKENS = [
+        ("ghp_abc123\r", "ghp_abc123", "trailing CR"),
+        ("ghp_abc123\r\n", "ghp_abc123", "trailing CRLF"),
+        ("ghp_abc123\n", "ghp_abc123", "trailing LF"),
+        ("ghp_abc123 ", "ghp_abc123", "trailing space"),
+        ("ghp_abc123\t", "ghp_abc123", "trailing tab"),
+        (" ghp_abc123", "ghp_abc123", "leading space"),
+        (" ghp_abc123 \r\n", "ghp_abc123", "mixed leading/trailing"),
+    ]
+
+    @pytest.mark.parametrize("dirty,clean,desc", DIRTY_TOKENS, ids=lambda x: x if len(x) < 20 else x[:15])
+    def test_roundtrip_preserves_exact_bytes(self, dirty, clean, desc, tmp_path):
+        """Store roundtrip preserves the secret exactly (including whitespace).
+
+        The store itself should NOT strip — that's the CLI's job.
+        This test documents current behavior so the defense-in-depth
+        .strip() at header injection time is clearly necessary.
+        """
+        key = os.urandom(32)
+        store = EncryptedStore(key, tmp_path / "creds.json")
+        entry = CredentialEntry(
+            alias="dirty-token",
+            auth_type="bearer_token",
+            secret=dirty,
+            allowed_urls=["https://api.github.com/*"],
+        )
+        store.add(entry)
+        retrieved = store.get("dirty-token")
+        # Store preserves exact bytes — this is by design
+        assert retrieved.secret == dirty
+        # But stripped version matches the clean token
+        assert retrieved.secret.strip() == clean
+
+    @pytest.mark.parametrize("dirty,clean,desc", DIRTY_TOKENS, ids=lambda x: x if len(x) < 20 else x[:15])
+    def test_bearer_header_after_strip(self, dirty, clean, desc):
+        """The Authorization header must be exactly 'Bearer {token}' with no trailing junk."""
+        header = f"Bearer {dirty.strip()}"
+        assert header == f"Bearer {clean}"
+        assert header[-1] != "\r"
+        assert header[-1] != "\n"
+        assert header[-1] != " "

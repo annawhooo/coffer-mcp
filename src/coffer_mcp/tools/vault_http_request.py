@@ -141,7 +141,7 @@ async def vault_http_request(
     extra_secrets: list[str] = []  # Runtime secrets to scrub (e.g., OAuth2 tokens)
 
     if entry.auth_type == "bearer_token":
-        request_headers["Authorization"] = f"Bearer {entry.secret}"
+        request_headers["Authorization"] = f"Bearer {entry.secret.strip()}"
     elif entry.auth_type == "basic_auth":
         import base64
 

@@ -127,7 +127,7 @@ async def vault_test(
     # Build auth headers
     request_headers: dict[str, str] = {}
     if entry.auth_type == "bearer_token":
-        request_headers["Authorization"] = f"Bearer {entry.secret}"
+        request_headers["Authorization"] = f"Bearer {entry.secret.strip()}"
     elif entry.auth_type == "basic_auth":
         import base64
 
