@@ -153,7 +153,11 @@ class TestBearerTokenWhitespace:
         (" ghp_abc123 \r\n", "ghp_abc123", "mixed leading/trailing"),
     ]
 
-    @pytest.mark.parametrize("dirty,clean,desc", DIRTY_TOKENS, ids=lambda x: x if len(x) < 20 else x[:15])
+    @pytest.mark.parametrize(
+        "dirty,clean,desc",
+        DIRTY_TOKENS,
+        ids=lambda x: x if len(x) < 20 else x[:15],
+    )
     def test_roundtrip_preserves_exact_bytes(self, dirty, clean, desc, tmp_path):
         """Store roundtrip preserves the secret exactly (including whitespace).
 
@@ -176,7 +180,11 @@ class TestBearerTokenWhitespace:
         # But stripped version matches the clean token
         assert retrieved.secret.strip() == clean
 
-    @pytest.mark.parametrize("dirty,clean,desc", DIRTY_TOKENS, ids=lambda x: x if len(x) < 20 else x[:15])
+    @pytest.mark.parametrize(
+        "dirty,clean,desc",
+        DIRTY_TOKENS,
+        ids=lambda x: x if len(x) < 20 else x[:15],
+    )
     def test_bearer_header_after_strip(self, dirty, clean, desc):
         """The Authorization header must be exactly 'Bearer {token}' with no trailing junk."""
         header = f"Bearer {dirty.strip()}"
