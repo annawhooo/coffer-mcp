@@ -102,7 +102,7 @@ def init():
 )
 def add(alias, auth_type, username, description, allowed_urls, allowed_methods, expires):
     """Add a new credential to the vault."""
-    secret = getpass.getpass("Secret (password / token / API key): ")
+    secret = getpass.getpass("Secret (password / token / API key): ").strip()
 
     if not secret:
         click.echo("Error: Secret cannot be empty.", err=True)
@@ -244,12 +244,12 @@ def rotate(alias):
         sys.exit(1)
 
     click.echo(f"Rotating secret for '{alias}' (type: {entry.auth_type})")
-    new_secret = getpass.getpass("New secret (password / token / API key): ")
+    new_secret = getpass.getpass("New secret (password / token / API key): ").strip()
     if not new_secret:
         click.echo("Error: Secret cannot be empty.", err=True)
         sys.exit(1)
 
-    confirm = getpass.getpass("Confirm new secret: ")
+    confirm = getpass.getpass("Confirm new secret: ").strip()
     if new_secret != confirm:
         click.echo("Error: Secrets do not match.", err=True)
         sys.exit(1)
