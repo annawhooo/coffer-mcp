@@ -27,6 +27,31 @@ from coffer_mcp.store import (
 )
 
 
+def _read_secret(prompt: str = "Secret (password / token / API key): ") -> str:
+    """Read a secret from the terminal, with fallback for Windows paste issues.
+
+    On Windows, getpass uses msvcrt.getwch() which reads raw keystrokes.
+    Ctrl+V paste sends the literal \\x16 control character instead of
+    clipboard content. When this is detected, we fall back to input()
+    which processes paste correctly (but echoes to the terminal).
+    """
+    value = getpass.getpass(prompt).strip()
+    if value and all(c < " " for c in value):
+        # Got only control characters (e.g. \x16 from Ctrl+V) —
+        # getpass didn't capture the paste.
+        click.echo(
+            "It looks like paste didn't work with hidden input. "
+            "Retrying with visible input.",
+            err=True,
+        )
+        click.echo(
+            "WARNING: your secret WILL be visible on screen.",
+            err=True,
+        )
+        value = input(prompt).strip()
+    return value
+
+
 def _get_store() -> EncryptedStore:
     return EncryptedStore(get_master_key())
 
@@ -102,7 +127,7 @@ def init():
 )
 def add(alias, auth_type, username, description, allowed_urls, allowed_methods, expires):
     """Add a new credential to the vault."""
-    secret = getpass.getpass("Secret (password / token / API key): ").strip()
+    secret = _read_secret()
 
     if not secret:
         click.echo("Error: Secret cannot be empty.", err=True)
@@ -244,12 +269,12 @@ def rotate(alias):
         sys.exit(1)
 
     click.echo(f"Rotating secret for '{alias}' (type: {entry.auth_type})")
-    new_secret = getpass.getpass("New secret (password / token / API key): ").strip()
+    new_secret = _read_secret("New secret (password / token / API key): ")
     if not new_secret:
         click.echo("Error: Secret cannot be empty.", err=True)
         sys.exit(1)
 
-    confirm = getpass.getpass("Confirm new secret: ").strip()
+    confirm = _read_secret("Confirm new secret: ")
     if new_secret != confirm:
         click.echo("Error: Secrets do not match.", err=True)
         sys.exit(1)
