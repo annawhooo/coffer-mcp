@@ -35,6 +35,7 @@ mutation_session.sqlite
 .coffer/
 credentials.json
 audit.jsonl
+vault-backup-*.json
 .master-key
 
 # Environment

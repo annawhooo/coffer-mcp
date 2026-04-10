@@ -94,7 +94,7 @@ def init():
 
 
 @main.command()
-@click.option("--alias", prompt="Credential alias (e.g., 'onetrust-blog')")
+@click.option("--alias", prompt="Credential alias (e.g., 'my-api')")
 @click.option(
     "--auth-type",
     type=click.Choice(
