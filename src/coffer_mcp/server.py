@@ -25,6 +25,11 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from coffer_mcp.audit import AuditLogger
+from coffer_mcp.credential_guard import (
+    check_for_secrets,
+    create_rejection_response,
+    log_violation,
+)
 from coffer_mcp.browser.playwright_bridge import (
     browser_web_fetch as _browser_web_fetch,
 )
@@ -132,6 +137,14 @@ async def coffer_http_request(
             for the audit log (e.g., "checking repo status for user's PR
             review request"). Logged but never affects request behavior.
     """
+    violation = check_for_secrets({
+        "url": url, "body": body, "headers": headers,
+        "params": params, "reason": reason,
+    })
+    if violation:
+        log_violation(violation, logger=_get_audit())
+        return json.dumps(create_rejection_response(violation), indent=2)
+
     try:
         body_dict = json.loads(body) if body else None
         headers_dict = json.loads(headers) if headers else None
@@ -181,6 +194,14 @@ async def coffer_web_login(
         submit_selector: CSS selector for the submit/login button.
         wait_after_login: Milliseconds to wait after clicking submit (default: 5000).
     """
+    violation = check_for_secrets({
+        "login_url": login_url, "username_selector": username_selector,
+        "password_selector": password_selector, "submit_selector": submit_selector,
+    })
+    if violation:
+        log_violation(violation, logger=_get_audit())
+        return json.dumps(create_rejection_response(violation), indent=2)
+
     result = await _browser_web_login(
         store=_get_store(),
         audit=_get_audit(),
@@ -215,6 +236,11 @@ async def coffer_web_fetch(
         reason: Why you are fetching this page. Brief task context
             for the audit log. Logged but never affects fetch behavior.
     """
+    violation = check_for_secrets({"url": url, "reason": reason})
+    if violation:
+        log_violation(violation, logger=_get_audit())
+        return json.dumps(create_rejection_response(violation), indent=2)
+
     result = await _browser_web_fetch(
         store=_get_store(),
         audit=_get_audit(),
@@ -261,6 +287,11 @@ async def coffer_test(
         reason: Why you are testing this credential. Brief task context
             for the audit log. Logged but never affects test behavior.
     """
+    violation = check_for_secrets({"url": url, "reason": reason})
+    if violation:
+        log_violation(violation, logger=_get_audit())
+        return json.dumps(create_rejection_response(violation), indent=2)
+
     result = await _vault_test(
         store=_get_store(),
         audit=_get_audit(),
