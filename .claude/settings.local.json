@@ -41,7 +41,27 @@
       "Bash(python -m pytest tests/test_encrypted_store.py::TestEncryptedStore::test_metadata_never_contains_secret tests/test_p0_fixes.py::TestAAD::test_swapped_ciphertext_detected --tb=short -q)",
       "Bash(python -m pytest tests/test_e2e_mcp.py::TestCofferHttpRequest -tb=short -q)",
       "Bash(python -m pytest tests/test_e2e_mcp.py::TestCofferHttpRequest --tb=short -q)",
-      "Bash(python -m pytest tests/test_audit2_fixes.py tests/test_e2e_mcp.py --tb=short -q)"
+      "Bash(python -m pytest tests/test_audit2_fixes.py tests/test_e2e_mcp.py --tb=short -q)",
+      "Bash(python -c \"from detect.coffer_detect_v04 import rule_017_missing_reason; print\\(''import OK''\\)\")",
+      "Read(//c/Users/Anna/PycharmProjects/**)",
+      "Read(//c/Users/Anna/**)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(where pandoc:*)",
+      "Bash(where wkhtmltopdf:*)",
+      "Bash(pip list:*)",
+      "Bash(python -m md2pdf.cli immune-security-mappings.md -o immune-security-mappings.pdf)",
+      "Bash(where chrome:*)",
+      "Bash(where msedge:*)",
+      "Read(//c/Program Files/Google/Chrome/Application/**)",
+      "Read(//c/Program Files \\(x86\\)/Microsoft/Edge/Application/**)",
+      "Bash(python -m pytest tests/test_encrypted_store.py -v)",
+      "Bash(python -m pytest --tb=short)",
+      "Bash(python -m ruff check src/ tests/)",
+      "Bash(python -m coffer_mcp.cli test github-pat)",
+      "Bash(python -m ruff check src/coffer_mcp/cli.py src/coffer_mcp/tools/vault_test.py)",
+      "Bash(python -m pytest tests/test_encrypted_store.py -q)"
     ]
   }
 }
