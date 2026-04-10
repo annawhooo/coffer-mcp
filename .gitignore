@@ -40,3 +40,4 @@ audit.jsonl
 # Environment
 .env
 *.env
+.claude/ 
