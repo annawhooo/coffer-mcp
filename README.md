@@ -176,6 +176,25 @@ See [SECURITY.md](SECURITY.md) for the full threat model.
 | `web_login` | Websites with form-based login | Browser automation via Playwright |
 | `oauth2_client_credentials` | OAuth2 APIs (ServiceNow, etc.) | Auto-fetches and caches tokens |
 
+### OAuth2 client_credentials format
+
+The OAuth2 client_credentials flow is two calls: coffer first POSTs `client_id`
+and `client_secret` to a token endpoint, then uses the returned access token as
+`Authorization: Bearer <token>` on the actual API call. Because the token URL is
+per-tenant (e.g. `uat.onetrust.com` vs `app.onetrust.com`) and tokens are
+scoped, coffer needs both pieces at import time. They are packed into the
+`username` and `secret` fields using `|` as a delimiter:
+
+| Field | Format | Example |
+|---|---|---|
+| `username` | `<client_id>\|<client_secret>` | `abc123\|s3cr3t` |
+| `secret` | `<token_url>\|<scope>` | `https://auth.example.com/oauth2/token\|read:api` |
+
+Scope is optional (some providers ignore it). The token URL must also appear in
+`--allowed-urls` — coffer checks it against the allowlist before POSTing the
+credentials, so a malicious prompt can't redirect the client secret to an
+attacker-controlled token endpoint.
+
 ## Credential Expiry
 
 Credentials can have an optional expiry date. When set:
