@@ -187,8 +187,8 @@ scoped, coffer needs both pieces at import time. They are packed into the
 
 | Field | Format | Example |
 |---|---|---|
-| `username` | `<client_id>\|<client_secret>` | `abc123\|s3cr3t` |
-| `secret` | `<token_url>\|<scope>` | `https://auth.example.com/oauth2/token\|read:api` |
+| `username` | `<client_id>&#124;<client_secret>` | `abc123&#124;s3cr3t` |
+| `secret` | `<token_url>&#124;<scope>` | `https://auth.example.com/oauth2/token&#124;read:api` |
 
 Scope is optional (some providers ignore it). The token URL must also appear in
 `--allowed-urls` — coffer checks it against the allowlist before POSTing the
