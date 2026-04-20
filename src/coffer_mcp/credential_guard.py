@@ -53,8 +53,23 @@ SECRET_PATTERNS = [
      re.compile(r'AKIA[0-9A-Z]{16}'),
      "AWS access key ID"),
 
+    # AWS secret access keys are 40 chars of base64 data. Real keys are 30
+    # random bytes encoded to 40 chars with no padding -- so `=` never appears.
+    # We require:
+    #   - boundaries on both sides (run of base64-charset chars is exactly 40,
+    #     not a longer substring of a URL path, a UUID segment, etc.)
+    #   - at least one uppercase, one lowercase, and one digit inside the
+    #     match -- random 30-byte base64 has all three with probability ~1;
+    #     URL paths and hex UUIDs usually don't.
     ("AWS Secret Key",
-     re.compile(r'[A-Za-z0-9/+=]{40}', re.ASCII),
+     re.compile(
+         r'(?<![A-Za-z0-9/+])'
+         r'(?=[A-Za-z0-9/+]{0,39}[A-Z])'
+         r'(?=[A-Za-z0-9/+]{0,39}[a-z])'
+         r'(?=[A-Za-z0-9/+]{0,39}[0-9])'
+         r'[A-Za-z0-9/+]{40}'
+         r'(?![A-Za-z0-9/+])',
+         re.ASCII),
      "Possible AWS secret access key (40-char base64)"),
 
     ("Bearer Token",
@@ -78,7 +93,8 @@ SECRET_PATTERNS = [
      "Possible Azure storage/service key"),
 
     ("Generic Long Secret",
-     re.compile(r'(?:key|token|secret|password|credential|api_key|apikey)\s*[=:]\s*["\']?([A-Za-z0-9_\-./+=]{20,})', re.IGNORECASE),
+     re.compile(r'(?:key|token|secret|password|credential|api_key|apikey)\s*[=:]\s*["\']?([A-Za-z0-9_\-./+=]{20,})',
+                re.IGNORECASE),
      "Generic key=value secret pattern"),
 
     ("Private Key Header",
@@ -89,11 +105,6 @@ SECRET_PATTERNS = [
      re.compile(r'(?:mongodb|postgres|mysql|redis|amqp)://\S+:\S+@', re.IGNORECASE),
      "Database/service connection string with embedded credentials"),
 ]
-
-# Minimum length for the generic AWS secret key pattern to avoid
-# false positives on short base64 strings
-AWS_SECRET_MIN_CONTEXT = 40
-
 
 # ---------------------------------------------------------------------------
 # Guard Functions
@@ -204,7 +215,12 @@ def log_violation(violation: dict, logger=None) -> dict:
     }
 
     if logger:
-        logger.log_lifecycle("credential_exposure_attempt", event)
+        logger.log(
+            event_type="credential.exposure_attempt",
+            alias="",
+            status="failure",
+            details=event,
+        )
 
     return event
 
