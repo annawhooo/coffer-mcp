@@ -30,6 +30,11 @@ async def get_oauth2_token(
     """
     Acquire an OAuth2 access token using the client_credentials grant.
 
+    Uses HTTP Basic authentication for the client credentials, which is
+    the method RECOMMENDED by RFC 6749 §2.3.1 and required by many
+    providers (OneTrust, ServiceNow, Okta, etc.). Form-body credentials
+    are rejected by some providers with a 400 response.
+
     Args:
         client_id: The OAuth2 client ID.
         client_secret: The OAuth2 client secret.
@@ -39,17 +44,29 @@ async def get_oauth2_token(
     Returns:
         Dict with access_token and expires_at.
     """
-    form_data = {
-        "grant_type": "client_credentials",
-        "client_id": client_id,
-        "client_secret": client_secret,
-    }
+    form_data = {"grant_type": "client_credentials"}
     if scope:
         form_data["scope"] = scope
 
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
+
     async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(token_url, data=form_data)
-        response.raise_for_status()
+        response = await client.post(
+            token_url,
+            data=form_data,
+            headers=headers,
+            auth=(client_id, client_secret),
+        )
+        if response.status_code >= 400:
+            body_snippet = response.text[:500] if response.text else "<empty>"
+            raise httpx.HTTPStatusError(
+                f"OAuth2 token endpoint returned {response.status_code}: {body_snippet}",
+                request=response.request,
+                response=response,
+            )
 
     token_data = response.json()
     expires_in = token_data.get("expires_in", 3600)
