@@ -25,11 +25,6 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from coffer_mcp.audit import AuditLogger
-from coffer_mcp.credential_guard import (
-    check_for_secrets,
-    create_rejection_response,
-    log_violation,
-)
 from coffer_mcp.browser.playwright_bridge import (
     browser_web_fetch as _browser_web_fetch,
 )
@@ -38,6 +33,11 @@ from coffer_mcp.browser.playwright_bridge import (
 )
 from coffer_mcp.browser.playwright_bridge import (
     browser_web_logout as _browser_web_logout,
+)
+from coffer_mcp.credential_guard import (
+    check_for_secrets,
+    create_rejection_response,
+    log_violation,
 )
 from coffer_mcp.secmem import harden_process
 from coffer_mcp.store import EncryptedStore, get_master_key

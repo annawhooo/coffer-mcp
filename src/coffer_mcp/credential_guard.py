@@ -25,9 +25,7 @@ the call is rejected before the value reaches storage.
 """
 
 import re
-import json
 from datetime import datetime, timezone
-
 
 # ---------------------------------------------------------------------------
 # Secret Patterns
