@@ -40,8 +40,7 @@ def _read_secret(prompt: str = "Secret (password / token / API key): ") -> str:
         # Got only control characters (e.g. \x16 from Ctrl+V) —
         # getpass didn't capture the paste.
         click.echo(
-            "It looks like paste didn't work with hidden input. "
-            "Retrying with visible input.",
+            "It looks like paste didn't work with hidden input. Retrying with visible input.",
             err=True,
         )
         click.echo(
