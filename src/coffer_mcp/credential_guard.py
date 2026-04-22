@@ -35,22 +35,18 @@ from datetime import datetime, timezone
 # the most common accidental exposure paths.
 
 SECRET_PATTERNS = [
-    ("GitHub PAT (classic)",
-     re.compile(r'ghp_[A-Za-z0-9_]{36,}'),
-     "GitHub personal access token (classic format)"),
-
-    ("GitHub PAT (fine-grained)",
-     re.compile(r'github_pat_[A-Za-z0-9_]{22,}'),
-     "GitHub personal access token (fine-grained format)"),
-
-    ("OpenAI API Key",
-     re.compile(r'sk-[A-Za-z0-9]{20,}'),
-     "OpenAI or Stripe secret key"),
-
-    ("AWS Access Key",
-     re.compile(r'AKIA[0-9A-Z]{16}'),
-     "AWS access key ID"),
-
+    (
+        "GitHub PAT (classic)",
+        re.compile(r"ghp_[A-Za-z0-9_]{36,}"),
+        "GitHub personal access token (classic format)",
+    ),
+    (
+        "GitHub PAT (fine-grained)",
+        re.compile(r"github_pat_[A-Za-z0-9_]{22,}"),
+        "GitHub personal access token (fine-grained format)",
+    ),
+    ("OpenAI API Key", re.compile(r"sk-[A-Za-z0-9]{20,}"), "OpenAI or Stripe secret key"),
+    ("AWS Access Key", re.compile(r"AKIA[0-9A-Z]{16}"), "AWS access key ID"),
     # AWS secret access keys are 40 chars of base64 data. Real keys are 30
     # random bytes encoded to 40 chars with no padding -- so `=` never appears.
     # We require:
@@ -59,54 +55,52 @@ SECRET_PATTERNS = [
     #   - at least one uppercase, one lowercase, and one digit inside the
     #     match -- random 30-byte base64 has all three with probability ~1;
     #     URL paths and hex UUIDs usually don't.
-    ("AWS Secret Key",
-     re.compile(
-         r'(?<![A-Za-z0-9/+])'
-         r'(?=[A-Za-z0-9/+]{0,39}[A-Z])'
-         r'(?=[A-Za-z0-9/+]{0,39}[a-z])'
-         r'(?=[A-Za-z0-9/+]{0,39}[0-9])'
-         r'[A-Za-z0-9/+]{40}'
-         r'(?![A-Za-z0-9/+])',
-         re.ASCII),
-     "Possible AWS secret access key (40-char base64)"),
-
-    ("Bearer Token",
-     re.compile(r'Bearer\s+[A-Za-z0-9._\-]{20,}', re.IGNORECASE),
-     "Bearer authentication token"),
-
-    ("JWT",
-     re.compile(r'eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}'),
-     "JSON Web Token"),
-
-    ("Slack Token",
-     re.compile(r'xox[bpsar]-[A-Za-z0-9-]{10,}'),
-     "Slack API token"),
-
-    ("Google API Key",
-     re.compile(r'AIza[A-Za-z0-9_-]{35}'),
-     "Google API key"),
-
-    ("Azure Key",
-     re.compile(r'[A-Za-z0-9/+=]{86}=='),
-     "Possible Azure storage/service key"),
-
-    ("Generic Long Secret",
-     re.compile(r'(?:key|token|secret|password|credential|api_key|apikey)\s*[=:]\s*["\']?([A-Za-z0-9_\-./+=]{20,})',
-                re.IGNORECASE),
-     "Generic key=value secret pattern"),
-
-    ("Private Key Header",
-     re.compile(r'-----BEGIN\s+(RSA\s+)?PRIVATE\s+KEY-----'),
-     "PEM private key"),
-
-    ("Connection String",
-     re.compile(r'(?:mongodb|postgres|mysql|redis|amqp)://\S+:\S+@', re.IGNORECASE),
-     "Database/service connection string with embedded credentials"),
+    (
+        "AWS Secret Key",
+        re.compile(
+            r"(?<![A-Za-z0-9/+])"
+            r"(?=[A-Za-z0-9/+]{0,39}[A-Z])"
+            r"(?=[A-Za-z0-9/+]{0,39}[a-z])"
+            r"(?=[A-Za-z0-9/+]{0,39}[0-9])"
+            r"[A-Za-z0-9/+]{40}"
+            r"(?![A-Za-z0-9/+])",
+            re.ASCII,
+        ),
+        "Possible AWS secret access key (40-char base64)",
+    ),
+    (
+        "Bearer Token",
+        re.compile(r"Bearer\s+[A-Za-z0-9._\-]{20,}", re.IGNORECASE),
+        "Bearer authentication token",
+    ),
+    ("JWT", re.compile(r"eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}"), "JSON Web Token"),
+    ("Slack Token", re.compile(r"xox[bpsar]-[A-Za-z0-9-]{10,}"), "Slack API token"),
+    ("Google API Key", re.compile(r"AIza[A-Za-z0-9_-]{35}"), "Google API key"),
+    ("Azure Key", re.compile(r"[A-Za-z0-9/+=]{86}=="), "Possible Azure storage/service key"),
+    (
+        "Generic Long Secret",
+        re.compile(
+            r'(?:key|token|secret|password|credential|api_key|apikey)\s*[=:]\s*["\']?([A-Za-z0-9_\-./+=]{20,})',
+            re.IGNORECASE,
+        ),
+        "Generic key=value secret pattern",
+    ),
+    (
+        "Private Key Header",
+        re.compile(r"-----BEGIN\s+(RSA\s+)?PRIVATE\s+KEY-----"),
+        "PEM private key",
+    ),
+    (
+        "Connection String",
+        re.compile(r"(?:mongodb|postgres|mysql|redis|amqp)://\S+:\S+@", re.IGNORECASE),
+        "Database/service connection string with embedded credentials",
+    ),
 ]
 
 # ---------------------------------------------------------------------------
 # Guard Functions
 # ---------------------------------------------------------------------------
+
 
 def check_for_secrets(params: dict, param_name: str = None) -> dict | None:
     """
@@ -259,7 +253,7 @@ if __name__ == "__main__":
         result = check_for_secrets(params)
         status = "REJECTED" if result else "MISSED"
         pattern = result["pattern"] if result else "none"
-        print(f"  {i+1}. [{status}] {pattern}")
+        print(f"  {i + 1}. [{status}] {pattern}")
         if not result:
             print(f"     WARNING: False negative! Params: {params}")
 
@@ -267,7 +261,7 @@ if __name__ == "__main__":
     for i, params in enumerate(test_cases_good):
         result = check_for_secrets(params)
         status = "REJECTED" if result else "ACCEPTED"
-        print(f"  {i+1}. [{status}]", end="")
+        print(f"  {i + 1}. [{status}]", end="")
         if result:
             print(f" WARNING: False positive! Pattern: {result['pattern']}")
         else:

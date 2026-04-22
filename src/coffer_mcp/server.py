@@ -137,10 +137,15 @@ async def coffer_http_request(
             for the audit log (e.g., "checking repo status for user's PR
             review request"). Logged but never affects request behavior.
     """
-    violation = check_for_secrets({
-        "url": url, "body": body, "headers": headers,
-        "params": params, "reason": reason,
-    })
+    violation = check_for_secrets(
+        {
+            "url": url,
+            "body": body,
+            "headers": headers,
+            "params": params,
+            "reason": reason,
+        }
+    )
     if violation:
         log_violation(violation, logger=_get_audit())
         return json.dumps(create_rejection_response(violation), indent=2)
@@ -194,10 +199,14 @@ async def coffer_web_login(
         submit_selector: CSS selector for the submit/login button.
         wait_after_login: Milliseconds to wait after clicking submit (default: 5000).
     """
-    violation = check_for_secrets({
-        "login_url": login_url, "username_selector": username_selector,
-        "password_selector": password_selector, "submit_selector": submit_selector,
-    })
+    violation = check_for_secrets(
+        {
+            "login_url": login_url,
+            "username_selector": username_selector,
+            "password_selector": password_selector,
+            "submit_selector": submit_selector,
+        }
+    )
     if violation:
         log_violation(violation, logger=_get_audit())
         return json.dumps(create_rejection_response(violation), indent=2)
