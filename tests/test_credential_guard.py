@@ -33,9 +33,9 @@ def test_log_violation_without_logger_does_not_raise():
     assert event["pattern"] == "JWT"
 
 
-def test_onetrust_uuid_url_does_not_trip_aws_secret_key_pattern():
+def test_uuid_in_url_path_does_not_trip_aws_secret_key_pattern():
     url = (
-        "https://uat.onetrust.com/api/assessment/v2/assessments/"
+        "https://api.example.com/assessment/v2/assessments/"
         "60521f35-4135-4d39-8d58-043ca767d5bc/export"
     )
     assert check_for_secrets({"url": url}) is None

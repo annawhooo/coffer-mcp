@@ -271,7 +271,7 @@ async def browser_web_fetch(
 
         # Dismiss cookie banners if present
         cookie_selectors = [
-            "#onetrust-accept-btn-handler",
+            "#cookie-accept-btn",
             "button:has-text('Accept All')",
             "button:has-text('Essential only')",
         ]

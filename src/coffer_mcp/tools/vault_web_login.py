@@ -1,7 +1,7 @@
 """
 vault_web_login tool — performs form-based web login and content retrieval.
 
-This is the tool that handles the OneTrust blog portal scenario:
+Handles the form-based portal scenario:
 1. Logs into a website using stored credentials via HTTP session
 2. Navigates to content pages
 3. Extracts clean markdown content

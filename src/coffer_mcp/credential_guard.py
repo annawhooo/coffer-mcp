@@ -240,7 +240,7 @@ if __name__ == "__main__":
 
     # Should NOT trigger
     test_cases_good = [
-        {"alias": "github-pat"},
+        {"alias": "my-github-token"},
         {"alias": "my-key", "allowlist": ["https://api.github.com/*"]},
         {"alias": "test", "action": "revoke"},
         {"alias": "rename-me", "new_alias": "renamed"},

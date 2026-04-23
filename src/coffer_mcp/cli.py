@@ -111,7 +111,7 @@ def init():
 @click.option("--description", prompt="Description", default="")
 @click.option(
     "--allowed-urls",
-    prompt="Allowed URL patterns (comma-separated, e.g., 'https://my.onetrust.com/*')",
+    prompt="Allowed URL patterns (comma-separated, e.g., 'https://api.example.com/*')",
     default="",
 )
 @click.option(

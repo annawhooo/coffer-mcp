@@ -50,7 +50,7 @@ Each credential defines which URLs it can be used against. The allowlist uses
 strict matching on scheme and domain with fnmatch wildcards on the path only:
 
 ```
-https://my.onetrust.com/*       — matches any path on my.onetrust.com
+https://my.example.com/*       — matches any path on my.example.com
 https://api.example.com/v1/*    — matches any v1 API endpoint
 ```
 
@@ -199,5 +199,41 @@ The `details` object may contain:
 
 ## Reporting Vulnerabilities
 
-If you discover a security vulnerability, please report it responsibly
-by opening a GitHub issue tagged `security` or contacting the maintainer directly.
+Please report security vulnerabilities **privately** via GitHub Security
+Advisories:
+
+> https://github.com/annawhooo/coffer-mcp/security/advisories/new
+
+**Do not open a public GitHub issue for security reports.** Public issues are
+indexed immediately and can be exploited before a fix lands.
+
+### In Scope
+
+- Anything that causes Coffer to expose a credential value (secret, token,
+  cookie, password) to the LLM context, response body, audit log, error
+  message, or uncontrolled logging sink.
+- Anything that causes Coffer to use a credential against a URL outside its
+  `allowed_urls` list (including via redirects).
+- Anything that lets an unauthenticated local user read the encrypted store,
+  audit log, or master key outside the documented trust boundary.
+- Audit-chain forgery or tampering without the master key.
+- Prompt-injection bypasses in `content_sanitizer` that cause the LLM to
+  receive instructions hidden from the user.
+
+### Out of Scope
+
+- Attacks that require root/admin on the host (the host is a documented
+  trust boundary; see "What Coffer Does NOT Protect Against" above).
+- DoS attacks that require attacker-controlled upstream responses larger
+  than the 10 MB cap.
+- Issues in dependencies already tracked by `pip-audit` in CI unless you
+  have a specific, non-public exploit.
+
+### Response Expectations
+
+- Acknowledgement: within 7 days
+- Triage / initial assessment: within 14 days
+- Fix or mitigation plan communicated: within 30 days for confirmed issues
+
+Coffer is a single-maintainer project. Response times are best-effort, not
+an SLA.

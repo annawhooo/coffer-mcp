@@ -41,4 +41,16 @@ vault-backup-*.json
 # Environment
 .env
 *.env
-.claude/ 
+.env.*
+.claude/
+
+# Linting / tooling cache
+.ruff_cache/
+.remember/
+
+# Temp audit files
+tmp_audit.jsonl*
+
+# Crypto material
+*.key
+*.pem 

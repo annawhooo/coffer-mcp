@@ -32,7 +32,7 @@ async def get_oauth2_token(
 
     Uses HTTP Basic authentication for the client credentials, which is
     the method RECOMMENDED by RFC 6749 §2.3.1 and required by many
-    providers (OneTrust, ServiceNow, Okta, etc.). Form-body credentials
+    providers (ServiceNow, Okta, Auth0, etc.). Form-body credentials
     are rejected by some providers with a 400 response.
 
     Args:

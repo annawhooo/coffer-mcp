@@ -181,7 +181,7 @@ See [SECURITY.md](SECURITY.md) for the full threat model.
 The OAuth2 client_credentials flow is two calls: coffer first POSTs `client_id`
 and `client_secret` to a token endpoint, then uses the returned access token as
 `Authorization: Bearer <token>` on the actual API call. Because the token URL is
-per-tenant (e.g. `uat.onetrust.com` vs `app.onetrust.com`) and tokens are
+per-tenant (e.g. `uat.example.com` vs `app.example.com`) and tokens are
 scoped, coffer needs both pieces at import time. They are packed into the
 `username` and `secret` fields using `|` as a delimiter:
 
