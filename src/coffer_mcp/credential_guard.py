@@ -45,7 +45,24 @@ SECRET_PATTERNS = [
         re.compile(r"github_pat_[A-Za-z0-9_]{22,}"),
         "GitHub personal access token (fine-grained format)",
     ),
-    ("OpenAI API Key", re.compile(r"sk-[A-Za-z0-9]{20,}"), "OpenAI or Stripe secret key"),
+    ("OpenAI API Key", re.compile(r"sk-[A-Za-z0-9]{20,}"), "OpenAI secret key"),
+    # Stripe uses underscores between prefix and body (sk_live_..., sk_test_...,
+    # rk_live_..., rk_test_...). The prior description claimed the OpenAI
+    # pattern covered Stripe, but it required a hyphen, so bare Stripe keys
+    # like `sk_live_abc123...` passed straight through unless wrapped in a
+    # `key=value` form (caught by Generic Long Secret).
+    #
+    # Only secret prefixes are covered:
+    #   sk_  -- Stripe secret key (server-side only)
+    #   rk_  -- Stripe restricted key (server-side, scoped permissions)
+    # Publishable keys (pk_live_..., pk_test_...) are intentionally public
+    # and used in client-side code; flagging them would cause false positives
+    # on every legitimate Stripe integration.
+    (
+        "Stripe API Key",
+        re.compile(r"(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{20,}"),
+        "Stripe secret or restricted API key",
+    ),
     ("AWS Access Key", re.compile(r"AKIA[0-9A-Z]{16}"), "AWS access key ID"),
     # AWS secret access keys are 40 chars of base64 data. Real keys are 30
     # random bytes encoded to 40 chars with no padding -- so `=` never appears.

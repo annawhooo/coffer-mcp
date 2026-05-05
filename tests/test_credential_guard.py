@@ -75,3 +75,71 @@ def test_log_violation_and_guard_end_to_end_does_not_crash(tmp_path):
     log_violation(violation, logger=audit)
     rejection = create_rejection_response(violation)
     assert rejection["isError"] is True
+
+
+# Test fixtures are built by concatenation rather than literal strings so
+# GitHub secret scanning doesn't pattern-match them as real Stripe keys.
+# The runtime value is identical; only the source representation differs.
+_STRIPE_BODY = "EXAMPLE" + "abcdefghijklmnopqrstuvwx"
+
+
+def test_stripe_secret_key_live_detected():
+    """Bare Stripe secret key (sk_live_...) must trip the Stripe pattern.
+
+    Regression: previously the OpenAI pattern (sk-...) was claimed to cover
+    Stripe in its description, but Stripe uses an underscore between prefix
+    and body. Bare Stripe keys passed through unless wrapped in key=value
+    form.
+    """
+    stripe_key = "sk" + "_live_" + _STRIPE_BODY
+    v = check_for_secrets({"value": stripe_key})
+    assert v is not None
+    assert v["pattern"] == "Stripe API Key"
+
+
+def test_stripe_secret_key_test_detected():
+    """sk_test_ keys are also secret and must be detected."""
+    stripe_key = "sk" + "_test_" + _STRIPE_BODY
+    v = check_for_secrets({"value": stripe_key})
+    assert v is not None
+    assert v["pattern"] == "Stripe API Key"
+
+
+def test_stripe_restricted_key_detected():
+    """Restricted keys (rk_live_, rk_test_) are also secret and must be
+    detected."""
+    for prefix_letters, environment in (("rk", "live"), ("rk", "test")):
+        stripe_key = f"{prefix_letters}_{environment}_{_STRIPE_BODY}"
+        v = check_for_secrets({"value": stripe_key})
+        assert v is not None, f"expected match for {prefix_letters}_{environment}_"
+        assert v["pattern"] == "Stripe API Key"
+
+
+def test_stripe_publishable_key_not_flagged():
+    """Publishable keys (pk_live_, pk_test_) are intentionally public and
+    must NOT be flagged. Flagging them would produce false positives on
+    every legitimate Stripe integration that includes them in client-side
+    code, configuration, or fixtures."""
+    for prefix_letters, environment in (("pk", "live"), ("pk", "test")):
+        publishable = f"{prefix_letters}_{environment}_{_STRIPE_BODY}"
+        v = check_for_secrets({"value": publishable})
+        assert v is None, (
+            f"{prefix_letters}_{environment}_ should not be flagged but was: {v}"
+        )
+
+
+def test_stripe_key_in_nested_dict():
+    """Stripe key buried in nested config still detected (recursive scan)."""
+    stripe_key = "sk" + "_live_" + _STRIPE_BODY
+    params = {"alias": "stripe", "config": {"keys": {"secret": stripe_key}}}
+    v = check_for_secrets(params)
+    assert v is not None
+    assert v["pattern"] == "Stripe API Key"
+
+
+def test_openai_key_still_detected_separately():
+    """The OpenAI/Stripe split must not regress OpenAI detection."""
+    openai_key = "sk-" + "EXAMPLEabc123def456ghi789jkl012mno"
+    v = check_for_secrets({"value": openai_key})
+    assert v is not None
+    assert v["pattern"] == "OpenAI API Key"
