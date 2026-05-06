@@ -123,9 +123,7 @@ def test_stripe_publishable_key_not_flagged():
     for prefix_letters, environment in (("pk", "live"), ("pk", "test")):
         publishable = f"{prefix_letters}_{environment}_{_STRIPE_BODY}"
         v = check_for_secrets({"value": publishable})
-        assert v is None, (
-            f"{prefix_letters}_{environment}_ should not be flagged but was: {v}"
-        )
+        assert v is None, f"{prefix_letters}_{environment}_ should not be flagged but was: {v}"
 
 
 def test_stripe_key_in_nested_dict():
