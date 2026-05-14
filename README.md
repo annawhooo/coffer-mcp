@@ -261,4 +261,4 @@ CI runs automatically on every push and PR — lint + test matrix across Python 
 
 ## License
 
-MIT
+Apache 2.0
