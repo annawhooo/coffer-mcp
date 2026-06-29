@@ -104,20 +104,22 @@ class TestValidateOauth2Secret:
             "https://auth.example.com/token|read write",
         )
         assert result is not None
-        client_id, client_secret, token_url, scope = result
+        client_id, client_secret, token_url, scope, auth_style = result
         assert client_id == "myid"
         assert client_secret == "mysecret"
         assert token_url == "https://auth.example.com/token"
         assert scope == "read write"
+        assert auth_style == "body"
 
     def test_valid_minimal_format(self):
         result = validate_oauth2_secret("myid", "https://auth.example.com/token")
         assert result is not None
-        client_id, client_secret, token_url, scope = result
+        client_id, client_secret, token_url, scope, auth_style = result
         assert client_id == "myid"
         assert client_secret == ""
         assert token_url == "https://auth.example.com/token"
         assert scope == ""
+        assert auth_style == "body"
 
     def test_empty_secret_rejected(self):
         assert validate_oauth2_secret("myid", "") is None

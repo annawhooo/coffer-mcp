@@ -155,9 +155,10 @@ async def vault_http_request(
             return error_response(
                 INVALID_OAUTH2_FORMAT,
                 f"Credential '{alias}' has invalid OAuth2 format. "
-                f"Expected username='client_id|client_secret', secret='token_url|scope'.",
+                f"Expected username='client_id|client_secret', "
+                f"secret='token_url|scope|auth_style' (auth_style is 'body' or 'basic').",
             )
-        client_id, client_secret, token_url, scope = oauth2_parts
+        client_id, client_secret, token_url, scope, auth_style = oauth2_parts
 
         # Validate token_url against allowlist to prevent exfiltration
         # of client credentials to an attacker-controlled token endpoint
@@ -173,7 +174,9 @@ async def vault_http_request(
                 f"OAuth2 token URL '{token_url}' is not in the allowlist for credential '{alias}'.",
             )
 
-        access_token = await get_cached_token(alias, client_id, client_secret, token_url, scope)
+        access_token = await get_cached_token(
+            alias, client_id, client_secret, token_url, scope, auth_style
+        )
         request_headers["Authorization"] = f"Bearer {access_token}"
         extra_secrets.append(access_token)
     elif entry.auth_type == "api_key_header":

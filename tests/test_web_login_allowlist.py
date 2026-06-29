@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import os
 from unittest.mock import AsyncMock, patch
 
@@ -49,20 +48,18 @@ def web_entry(store):
 class TestWebLoginAllowlist:
     """vault_web_login must validate login_url against allowed_urls."""
 
-    def test_login_url_not_in_allowlist_rejected(self, store, audit, web_entry):
+    async def test_login_url_not_in_allowlist_rejected(self, store, audit, web_entry):
         """Login URL outside the allowlist should be rejected immediately."""
-        result = asyncio.get_event_loop().run_until_complete(
-            vault_web_login(
-                store,
-                audit,
-                "portal",
-                login_url="https://evil.com/phish",
-            )
+        result = await vault_web_login(
+            store,
+            audit,
+            "portal",
+            login_url="https://evil.com/phish",
         )
         assert result["status"] == "error"
         assert "not in the allowed URLs" in result["message"]
 
-    def test_login_url_in_allowlist_proceeds(self, store, audit, web_entry):
+    async def test_login_url_in_allowlist_proceeds(self, store, audit, web_entry):
         """Login URL in the allowlist should proceed to make the request."""
         # Mock httpx to avoid real network calls
         mock_response = AsyncMock()
@@ -73,51 +70,43 @@ class TestWebLoginAllowlist:
             mock_client.post = AsyncMock(return_value=mock_response)
             mock_client_cls.return_value = mock_client
 
-            result = asyncio.get_event_loop().run_until_complete(
-                vault_web_login(
-                    store,
-                    audit,
-                    "portal",
-                    login_url="https://portal.example.com/login",
-                )
+            result = await vault_web_login(
+                store,
+                audit,
+                "portal",
+                login_url="https://portal.example.com/login",
             )
             assert result["status"] == "ok"
             mock_client.post.assert_called_once()
 
-    def test_login_url_subdomain_blocked(self, store, audit, web_entry):
+    async def test_login_url_subdomain_blocked(self, store, audit, web_entry):
         """Subdomain of allowed domain should still be blocked."""
-        result = asyncio.get_event_loop().run_until_complete(
-            vault_web_login(
-                store,
-                audit,
-                "portal",
-                login_url="https://evil.portal.example.com/login",
-            )
+        result = await vault_web_login(
+            store,
+            audit,
+            "portal",
+            login_url="https://evil.portal.example.com/login",
         )
         assert result["status"] == "error"
         assert "not in the allowed URLs" in result["message"]
 
-    def test_login_url_scheme_mismatch_blocked(self, store, audit, web_entry):
+    async def test_login_url_scheme_mismatch_blocked(self, store, audit, web_entry):
         """HTTP when HTTPS required should be blocked."""
-        result = asyncio.get_event_loop().run_until_complete(
-            vault_web_login(
-                store,
-                audit,
-                "portal",
-                login_url="http://portal.example.com/login",
-            )
+        result = await vault_web_login(
+            store,
+            audit,
+            "portal",
+            login_url="http://portal.example.com/login",
         )
         assert result["status"] == "error"
 
-    def test_audit_records_url_not_allowed(self, store, audit, web_entry):
+    async def test_audit_records_url_not_allowed(self, store, audit, web_entry):
         """Blocked login attempts should be audited."""
-        asyncio.get_event_loop().run_until_complete(
-            vault_web_login(
-                store,
-                audit,
-                "portal",
-                login_url="https://evil.com/phish",
-            )
+        await vault_web_login(
+            store,
+            audit,
+            "portal",
+            login_url="https://evil.com/phish",
         )
         events = audit.get_events(alias="portal", limit=10)
         assert len(events) >= 1
@@ -128,31 +117,27 @@ class TestWebLoginAllowlist:
 class TestWebFetchAllowlist:
     """vault_web_fetch must validate the fetch URL against allowed_urls."""
 
-    def test_fetch_url_not_in_allowlist_rejected(self, store, audit, web_entry):
+    async def test_fetch_url_not_in_allowlist_rejected(self, store, audit, web_entry):
         """Fetch URL outside the allowlist should be rejected."""
         # First, create a fake session
-
         mock_client = AsyncMock()
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(_set_session("portal", mock_client))
+        await _set_session("portal", mock_client)
 
         try:
-            result = loop.run_until_complete(
-                vault_web_fetch(
-                    store,
-                    audit,
-                    "portal",
-                    url="https://evil.com/steal-data",
-                )
+            result = await vault_web_fetch(
+                store,
+                audit,
+                "portal",
+                url="https://evil.com/steal-data",
             )
             assert result["status"] == "error"
             assert "not in the allowed URLs" in result["message"]
             # The HTTP client should NOT have been called
             mock_client.get.assert_not_called()
         finally:
-            loop.run_until_complete(_clear_session("portal"))
+            await _clear_session("portal")
 
-    def test_fetch_url_in_allowlist_proceeds(self, store, audit, web_entry):
+    async def test_fetch_url_in_allowlist_proceeds(self, store, audit, web_entry):
         """Fetch URL in the allowlist should proceed to fetch."""
         mock_response = AsyncMock()
         mock_response.status_code = 200
@@ -162,22 +147,19 @@ class TestWebFetchAllowlist:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=mock_response)
 
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(_set_session("portal", mock_client))
+        await _set_session("portal", mock_client)
 
         try:
-            result = loop.run_until_complete(
-                vault_web_fetch(
-                    store,
-                    audit,
-                    "portal",
-                    url="https://portal.example.com/articles/latest",
-                )
+            result = await vault_web_fetch(
+                store,
+                audit,
+                "portal",
+                url="https://portal.example.com/articles/latest",
             )
             assert result["status"] == "ok"
             mock_client.get.assert_called_once()
         finally:
-            loop.run_until_complete(_clear_session("portal"))
+            await _clear_session("portal")
 
 
 # Helpers to manipulate the session cache in tests

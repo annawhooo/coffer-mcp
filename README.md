@@ -188,12 +188,20 @@ scoped, coffer needs both pieces at import time. They are packed into the
 | Field | Format | Example |
 |---|---|---|
 | `username` | `<client_id>&#124;<client_secret>` | `abc123&#124;s3cr3t` |
-| `secret` | `<token_url>&#124;<scope>` | `https://auth.example.com/oauth2/token&#124;read:api` |
+| `secret` | `<token_url>&#124;<scope>&#124;<auth_style>` | `https://auth.example.com/oauth2/token&#124;read:api&#124;body` |
 
 Scope is optional (some providers ignore it). The token URL must also appear in
 `--allowed-urls` — coffer checks it against the allowlist before POSTing the
 credentials, so a malicious prompt can't redirect the client secret to an
 attacker-controlled token endpoint.
+
+`auth_style` is optional and defaults to `body`, which sends `client_id` and
+`client_secret` as form-body parameters (`client_secret_post`). This is the most
+widely compatible method and is **required by OneTrust**, whose token endpoint
+reads the credentials from the body and ignores an `Authorization` header. Set
+it to `basic` to send the credentials in an HTTP Basic header
+(`client_secret_basic`) instead, which some IdPs require. Per RFC 6749 §2.3.1
+only one method is used per request.
 
 ## Credential Expiry
 

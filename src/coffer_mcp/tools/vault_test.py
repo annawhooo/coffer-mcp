@@ -154,13 +154,16 @@ async def vault_test(
                 **error_response(
                     INVALID_OAUTH2_FORMAT,
                     f"Credential '{alias}' has invalid OAuth2 format. "
-                    f"Expected username='client_id|client_secret', secret='token_url|scope'.",
+                    f"Expected username='client_id|client_secret', "
+                    f"secret='token_url|scope|auth_style' (auth_style is 'body' or 'basic').",
                 ),
                 "test": "FAIL",
             }
-        client_id, client_secret, token_url, scope = oauth2_parts
+        client_id, client_secret, token_url, scope, auth_style = oauth2_parts
         try:
-            access_token = await get_cached_token(alias, client_id, client_secret, token_url, scope)
+            access_token = await get_cached_token(
+                alias, client_id, client_secret, token_url, scope, auth_style
+            )
             request_headers["Authorization"] = f"Bearer {access_token}"
         except Exception as e:
             audit.log(
