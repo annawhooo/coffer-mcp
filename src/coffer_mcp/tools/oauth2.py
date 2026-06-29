@@ -26,20 +26,30 @@ async def get_oauth2_token(
     client_secret: str,
     token_url: str,
     scope: str = "",
+    auth_style: str = "body",
 ) -> dict[str, Any]:
     """
     Acquire an OAuth2 access token using the client_credentials grant.
 
-    Uses HTTP Basic authentication for the client credentials, which is
-    the method RECOMMENDED by RFC 6749 §2.3.1 and required by many
-    providers (ServiceNow, Okta, Auth0, etc.). Form-body credentials
-    are rejected by some providers with a 400 response.
+    The client credentials are presented according to ``auth_style``:
+
+    - "body" (client_secret_post, the default): client_id and client_secret
+      are sent as form-body params. This is the most widely compatible method
+      and is required by providers that parse only the body and ignore the
+      Authorization header (e.g. OneTrust's /api/access/v1/oauth/token).
+    - "basic" (client_secret_basic): credentials are sent via an HTTP Basic
+      Authorization header, as RECOMMENDED by RFC 6749 §2.3.1 and required by
+      some IdPs.
+
+    Per RFC 6749 §2.3.1 a client must not use more than one method per
+    request, so exactly one is used.
 
     Args:
         client_id: The OAuth2 client ID.
         client_secret: The OAuth2 client secret.
         token_url: The token endpoint URL.
         scope: Optional space-separated scopes.
+        auth_style: "body" or "basic" (see above).
 
     Returns:
         Dict with access_token and expires_at.
@@ -47,6 +57,13 @@ async def get_oauth2_token(
     form_data = {"grant_type": "client_credentials"}
     if scope:
         form_data["scope"] = scope
+
+    basic_auth = None
+    if auth_style == "basic":
+        basic_auth = (client_id, client_secret)
+    else:
+        form_data["client_id"] = client_id
+        form_data["client_secret"] = client_secret
 
     headers = {
         "Accept": "application/json",
@@ -58,7 +75,7 @@ async def get_oauth2_token(
             token_url,
             data=form_data,
             headers=headers,
-            auth=(client_id, client_secret),
+            auth=basic_auth,
         )
         if response.status_code >= 400:
             body_snippet = response.text[:500] if response.text else "<empty>"
@@ -84,6 +101,7 @@ async def get_cached_token(
     client_secret: str,
     token_url: str,
     scope: str = "",
+    auth_style: str = "body",
 ) -> str:
     """
     Get a valid OAuth2 token, using cache if available.
@@ -97,7 +115,9 @@ async def get_cached_token(
         if cached and time.time() < cached["expires_at"]:
             return cached["access_token"]
 
-        token_data = await get_oauth2_token(client_id, client_secret, token_url, scope)
+        token_data = await get_oauth2_token(
+            client_id, client_secret, token_url, scope, auth_style
+        )
         _token_cache[alias] = token_data
         return token_data["access_token"]
 

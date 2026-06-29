@@ -150,24 +150,35 @@ def validate_css_selector(selector: str) -> str | None:
     return s
 
 
-def validate_oauth2_secret(username: str, secret: str) -> tuple[str, str, str, str] | None:
+def validate_oauth2_secret(username: str, secret: str) -> tuple[str, str, str, str, str] | None:
     """
     Parse and validate OAuth2 client_credentials format.
 
     Expected formats:
         username: "client_id|client_secret"  (or just client_id)
-        secret: "token_url|scope"  (or just token_url)
+        secret: "token_url|scope|auth_style"  (scope and auth_style optional)
 
-    Returns (client_id, client_secret, token_url, scope) or None if invalid.
+    auth_style selects how the client credentials are presented to the token
+    endpoint: "body" (client_secret_post, the default) sends client_id and
+    client_secret as form-body params; "basic" (client_secret_basic) sends
+    them via an HTTP Basic Authorization header. Providers differ: OneTrust's
+    token endpoint requires "body", while some IdPs require "basic".
+
+    Returns (client_id, client_secret, token_url, scope, auth_style) or None
+    if invalid.
     """
     if not secret:
         return None
 
-    parts = secret.split("|", 1)
+    parts = secret.split("|", 2)
     token_url = parts[0].strip()
     scope = parts[1].strip() if len(parts) > 1 else ""
+    auth_style = parts[2].strip().lower() if len(parts) > 2 else "body"
 
     if not token_url or not token_url.startswith(("https://", "http://")):
+        return None
+
+    if auth_style not in ("body", "basic"):
         return None
 
     id_parts = username.split("|", 1)
@@ -177,7 +188,7 @@ def validate_oauth2_secret(username: str, secret: str) -> tuple[str, str, str, s
     if not client_id:
         return None
 
-    return client_id, client_secret, token_url, scope
+    return client_id, client_secret, token_url, scope, auth_style
 
 
 # ---------------------------------------------------------------------------
