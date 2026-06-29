@@ -115,9 +115,7 @@ async def get_cached_token(
         if cached and time.time() < cached["expires_at"]:
             return cached["access_token"]
 
-        token_data = await get_oauth2_token(
-            client_id, client_secret, token_url, scope, auth_style
-        )
+        token_data = await get_oauth2_token(client_id, client_secret, token_url, scope, auth_style)
         _token_cache[alias] = token_data
         return token_data["access_token"]
 
