@@ -2,12 +2,20 @@
 Coffer CLI — manage credentials from the command line.
 
 Usage:
+    coffer init          Set up the master key in the OS keyring
     coffer add           Add a new credential (interactive)
     coffer list          List all stored credentials
+    coffer test ALIAS    Make a lightweight authenticated request to verify a credential
+    coffer rotate ALIAS  Replace the secret for an existing credential
     coffer remove ALIAS  Remove a credential
     coffer audit         View audit log and verify integrity
-    coffer init          Set up the master key in the OS keyring
+    coffer export PATH   Export all credentials to an encrypted backup file
+    coffer import PATH    Import credentials from an encrypted backup file
+    coffer rekey         Re-encrypt the vault with a new master passphrase
+    coffer clear-key     Remove the master key from the OS keyring
     coffer serve         Start the MCP server (for debugging)
+
+Run `coffer COMMAND --help` for the parameters and examples of any command.
 """
 
 from __future__ import annotations
@@ -65,7 +73,7 @@ def _get_audit() -> AuditLogger:
 
 @click.group()
 def main():
-    """Coffer — credential vault for LLM agents."""
+    """Coffer - credential vault for LLM agents."""
     pass
 
 
@@ -93,7 +101,11 @@ def init():
 
 
 @main.command()
-@click.option("--alias", prompt="Credential alias (e.g., 'my-api')")
+@click.option(
+    "--alias",
+    prompt="Credential alias (e.g., 'my-api')",
+    help="Unique name you'll use to refer to this credential later (e.g. 'onetrust-uat').",
+)
 @click.option(
     "--auth-type",
     type=click.Choice(
@@ -106,18 +118,33 @@ def init():
         ]
     ),
     prompt="Authentication type",
+    help="How the credential authenticates. See the per-type field guide below.",
 )
-@click.option("--username", prompt="Username / email (leave blank if N/A)", default="")
-@click.option("--description", prompt="Description", default="")
+@click.option(
+    "--username",
+    prompt="Username / email (leave blank if N/A)",
+    default="",
+    help="Identity field; meaning depends on --auth-type (see below). "
+    "Leave blank for bearer_token and api_key_header.",
+)
+@click.option(
+    "--description",
+    prompt="Description",
+    default="",
+    help="Free-text note shown in 'coffer list'.",
+)
 @click.option(
     "--allowed-urls",
     prompt="Allowed URL patterns (comma-separated, e.g., 'https://api.example.com/*')",
     default="",
+    help="Comma-separated URL glob patterns this credential may be used against, "
+    "e.g. 'https://api.example.com/*'. For OAuth2 this must also cover the token URL.",
 )
 @click.option(
     "--allowed-methods",
     prompt="Allowed HTTP methods (comma-separated, e.g., 'GET,POST')",
     default="GET",
+    help="Comma-separated HTTP methods allowed, e.g. 'GET,POST'. Defaults to GET.",
 )
 @click.option(
     "--expires",
@@ -125,7 +152,45 @@ def init():
     help="Expiry date (YYYY-MM-DD or days from now like '90d'). Leave blank for no expiry.",
 )
 def add(alias, auth_type, username, description, allowed_urls, allowed_methods, expires):
-    """Add a new credential to the vault."""
+    """Add a new credential to the vault.
+
+    The secret (password, token, or API key) is read interactively and is
+    never passed as a command-line flag. What goes into --username and the
+    secret depends on --auth-type:
+
+    \b
+    bearer_token       username: (unused)
+                       secret:   the bearer token
+    \b
+    basic_auth         username: account username
+                       secret:   account password
+    \b
+    api_key_header     username: (unused)
+                       secret:   "Header-Name:value", or just the value to
+                                 use the default header X-API-Key
+    \b
+    oauth2_client_credentials
+                       username: "client_id|client_secret"
+                       secret:   "token_url|scope|auth_style"
+                                 scope and auth_style are optional.
+                                 auth_style is "body" (default; sends the
+                                 credentials in the form body) or "basic"
+                                 (sends them in an HTTP Basic header).
+                                 OneTrust requires "body". The token_url
+                                 must also match --allowed-urls.
+    \b
+    web_login          username: login username
+                       secret:   login password
+
+    \b
+    Examples:
+      coffer add --alias gh --auth-type bearer_token \\
+        --allowed-urls 'https://api.github.com/*' --allowed-methods GET,POST
+    \b
+      coffer add --alias ot-uat --auth-type oauth2_client_credentials \\
+        --username 'CLIENT_ID|CLIENT_SECRET' --allowed-urls 'https://uat.onetrust.com/*'
+        (then paste the secret: https://uat.onetrust.com/api/access/v1/oauth/token|read)
+    """
     secret = _read_secret()
 
     if not secret:
@@ -191,7 +256,11 @@ def add(alias, auth_type, username, description, allowed_urls, allowed_methods, 
 
 @main.command(name="list")
 def list_creds():
-    """List all stored credentials (no secrets shown)."""
+    """List all stored credentials (no secrets shown).
+
+    Shows each alias, auth type, expiry status, and description. Takes no
+    parameters.
+    """
     store = _get_store()
     aliases = store.list_aliases()
 
@@ -215,7 +284,15 @@ def list_creds():
 @main.command()
 @click.argument("alias")
 def remove(alias):
-    """Remove a credential from the vault."""
+    """Remove a credential from the vault.
+
+    ALIAS is the credential to delete. This is irreversible; run 'coffer export'
+    first if you want a backup.
+
+    \b
+    Example:
+      coffer remove onetrust-uat
+    """
     store = _get_store()
     audit = _get_audit()
 
@@ -228,10 +305,20 @@ def remove(alias):
 
 
 @main.command()
-@click.option("--alias", default="", help="Filter events by credential alias.")
-@click.option("--limit", default=20, help="Number of events to show.")
+@click.option(
+    "--alias",
+    default="",
+    help="Filter events to a single credential alias. Default: all.",
+)
+@click.option("--limit", default=20, help="Maximum number of recent events to show. Default: 20.")
 def audit(alias, limit):
-    """View audit log and verify chain integrity."""
+    """View the audit log and verify its tamper-evident HMAC chain.
+
+    \b
+    Examples:
+      coffer audit
+      coffer audit --alias onetrust-uat --limit 50
+    """
     logger = _get_audit()
 
     is_valid, count, message = logger.verify_chain()
@@ -256,7 +343,16 @@ def audit(alias, limit):
 @main.command()
 @click.argument("alias")
 def rotate(alias):
-    """Rotate the secret for an existing credential."""
+    """Rotate (replace) the secret for an existing credential.
+
+    ALIAS is the credential to update. The new secret is prompted for twice and
+    read interactively; all other fields (URLs, methods, auth type) are kept.
+    Use the same secret format that 'coffer add' documents for the auth type.
+
+    \b
+    Example:
+      coffer rotate onetrust-uat
+    """
     store = _get_store()
     audit = _get_audit()
 
@@ -285,9 +381,20 @@ def rotate(alias):
 
 @main.command()
 @click.argument("alias")
-@click.option("--url", default="", help="URL to test against (defaults to first allowed URL).")
+@click.option("--url", default="", help="URL to test against. Defaults to the first allowed URL.")
 def test(alias, url):
-    """Test a credential by making a lightweight authenticated request."""
+    """Test a credential by making a lightweight authenticated request.
+
+    ALIAS is the credential to test. For oauth2_client_credentials this also
+    exercises the token fetch, so it's the fastest way to confirm the
+    client_id/client_secret/token_url/auth_style are correct. The response
+    body is printed on failure to help diagnose the token endpoint's error.
+
+    \b
+    Examples:
+      coffer test onetrust-uat
+      coffer test gh --url https://api.github.com/user
+    """
     import asyncio
 
     from coffer_mcp.tools.vault_test import vault_test
@@ -389,7 +496,16 @@ def rekey():
 @main.command(name="export")
 @click.argument("output_path", type=click.Path())
 def export_cmd(output_path):
-    """Export all credentials to an encrypted backup file."""
+    """Export all credentials to an encrypted backup file.
+
+    OUTPUT_PATH is where the encrypted backup is written. You're prompted for a
+    separate backup passphrase (independent of the master key) that encrypts the
+    file, so the backup stays protected if moved off this machine.
+
+    \b
+    Example:
+      coffer export ./coffer-backup.enc
+    """
     from pathlib import Path
 
     from coffer_mcp.store.backup import export_vault
@@ -415,9 +531,22 @@ def export_cmd(output_path):
 
 @main.command(name="import")
 @click.argument("input_path", type=click.Path(exists=True))
-@click.option("--overwrite", is_flag=True, help="Overwrite existing credentials with same alias.")
+@click.option(
+    "--overwrite",
+    is_flag=True,
+    help="Replace existing credentials that have the same alias. Default: skip them.",
+)
 def import_cmd(input_path, overwrite):
-    """Import credentials from an encrypted backup file."""
+    """Import credentials from an encrypted backup file.
+
+    INPUT_PATH is the encrypted backup to read. You're prompted for the backup
+    passphrase that was set during export. Aliases that already exist are
+    skipped unless --overwrite is given.
+
+    \b
+    Example:
+      coffer import ./coffer-backup.enc --overwrite
+    """
     from pathlib import Path
 
     from coffer_mcp.store.backup import import_vault
