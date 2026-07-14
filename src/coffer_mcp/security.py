@@ -257,6 +257,33 @@ def check_method_allowed(entry: CredentialEntry, method: str) -> bool:
     return method.upper() in [m.upper() for m in entry.allowed_methods]
 
 
+def check_command_allowed(entry: CredentialEntry, argv: list) -> dict | None:
+    """
+    Check whether an exec invocation is allowed for a credential (TB-7).
+
+    Matching is exact argv equality against the credential's
+    allowed_commands — no prefix matching, no wildcards, no extra
+    arguments. argv[0] must be an absolute path so the binary cannot be
+    substituted via PATH. Fail-closed: empty allowlist allows nothing.
+
+    Returns:
+        The matching allowlist entry dict ({"argv": [...], "cwd": ...})
+        so the caller can use its fixed cwd, or None if not allowed.
+    """
+    import os as _os
+
+    if not isinstance(argv, list) or not argv:
+        return None
+    if not all(isinstance(a, str) and a for a in argv):
+        return None
+    if not _os.path.isabs(argv[0]):
+        return None
+    for command in entry.allowed_commands or []:
+        if isinstance(command, dict) and command.get("argv") == argv:
+            return command
+    return None
+
+
 def sanitize_response(
     response_text: str,
     entry: CredentialEntry,

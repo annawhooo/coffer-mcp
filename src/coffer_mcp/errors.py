@@ -30,6 +30,13 @@ INVALID_OAUTH2_FORMAT = "INVALID_OAUTH2_FORMAT"
 # Access control (rate limiting)
 RATE_LIMITED = "RATE_LIMITED"
 
+# Access control (subprocess execution)
+COMMAND_NOT_ALLOWED = "COMMAND_NOT_ALLOWED"
+
+# Runtime errors (subprocess execution)
+EXEC_FAILED = "EXEC_FAILED"
+EXEC_TIMEOUT = "EXEC_TIMEOUT"
+
 # Runtime errors
 HTTP_REQUEST_FAILED = "HTTP_REQUEST_FAILED"
 TOO_MANY_REDIRECTS = "TOO_MANY_REDIRECTS"

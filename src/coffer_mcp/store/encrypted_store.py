@@ -40,6 +40,9 @@ class CredentialEntry:
     secret: str = ""  # password, token, or API key — never returned to the LLM
     allowed_urls: list[str] = field(default_factory=list)
     allowed_methods: list[str] = field(default_factory=lambda: ["GET"])
+    # coffer_exec allowlist: [{"argv": ["/abs/path/bin", "arg", ...], "cwd": "/abs/dir" | None}]
+    # Exact-argv match only; argv[0] must be absolute. Fail-closed when empty.
+    allowed_commands: list[dict] = field(default_factory=list)
     description: str = ""
     created_at: float = field(default_factory=time.time)
     rotated_at: float = field(default_factory=time.time)
@@ -56,6 +59,7 @@ class CredentialEntry:
             "auth_type": self.auth_type,
             "allowed_urls": self.allowed_urls,
             "allowed_methods": self.allowed_methods,
+            "allowed_commands": self.allowed_commands,
             "description": self.description,
             "created_at": self.created_at,
             "rotated_at": self.rotated_at,
@@ -186,6 +190,44 @@ class EncryptedStore:
             # Single atomic write replaces the entire file
             self._write_blobs(blobs)
 
+    def add_allowed_command(self, alias: str, argv: list[str], cwd: str | None = None) -> int:
+        """Append a command to a credential's coffer_exec allowlist.
+
+        The allowlist lives inside the encrypted payload, so it is
+        confidential and integrity-protected like the secret itself.
+
+        Args:
+            alias: The credential to modify.
+            argv: Exact argument vector; argv[0] must be an absolute path.
+            cwd: Optional fixed working directory (absolute) for the command.
+
+        Returns:
+            The new number of allowed commands for this credential.
+
+        Raises:
+            KeyError: If the alias doesn't exist.
+            ValueError: If argv/cwd fail validation.
+        """
+        if not argv or not all(isinstance(a, str) and a for a in argv):
+            raise ValueError("argv must be a non-empty list of non-empty strings")
+        if not os.path.isabs(argv[0]):
+            raise ValueError("argv[0] must be an absolute path (PATH lookup is not allowed)")
+        if cwd is not None and not os.path.isabs(cwd):
+            raise ValueError("cwd must be an absolute path when provided")
+
+        with self._lock.acquire():
+            blobs = self._read_blobs()
+            for i, blob in enumerate(blobs):
+                if blob["alias"] == alias:
+                    entry = self._decrypt(blob)
+                    command = {"argv": list(argv), "cwd": cwd}
+                    if command not in entry.allowed_commands:
+                        entry.allowed_commands.append(command)
+                    blobs[i] = self._encrypt(entry)
+                    self._write_blobs(blobs)
+                    return len(entry.allowed_commands)
+            raise KeyError(f"No credential found with alias '{alias}'")
+
     def rekey(self, new_master_key: bytes) -> int:
         """
         Re-encrypt all credentials with a new master key.
@@ -287,6 +329,7 @@ class EncryptedStore:
                 "secret": entry.secret,
                 "allowed_urls": entry.allowed_urls,
                 "allowed_methods": entry.allowed_methods,
+                "allowed_commands": entry.allowed_commands,
             }
         ).encode("utf-8")
 
@@ -373,6 +416,7 @@ class EncryptedStore:
             secret=secret_data["secret"],
             allowed_urls=secret_data["allowed_urls"],
             allowed_methods=secret_data["allowed_methods"],
+            allowed_commands=secret_data.get("allowed_commands", []),
             description=blob["description"],
             created_at=blob["created_at"],
             rotated_at=blob["rotated_at"],
