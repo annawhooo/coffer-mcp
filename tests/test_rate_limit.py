@@ -106,14 +106,15 @@ class TestServerIntegration:
         """Server module with tiny rate limit and isolated store/audit."""
         from coffer_mcp import server as server_mod
         from coffer_mcp.audit.logger import AuditLogger
-        from coffer_mcp.ratelimit import RateLimiter as RL
         from coffer_mcp.store.encrypted_store import EncryptedStore
 
         store = EncryptedStore(os.urandom(32), store_path=tmp_path / "creds.json")
         audit = AuditLogger(tmp_path / "audit.jsonl", hmac_key=os.urandom(32), source="mcp")
         monkeypatch.setattr(server_mod, "_store", store)
         monkeypatch.setattr(server_mod, "_audit", audit)
-        monkeypatch.setattr(server_mod, "_rate_limiter", RL(max_requests=2, window_seconds=60))
+        monkeypatch.setattr(
+            server_mod, "_rate_limiter", RateLimiter(max_requests=2, window_seconds=60)
+        )
         return server_mod
 
     @pytest.mark.asyncio
