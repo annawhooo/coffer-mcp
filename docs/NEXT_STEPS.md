@@ -30,7 +30,7 @@
 |---|------|--------|--------|
 | 15 | **RR-H5: Audit log truncation detection** — HMAC-protected checkpoint sidecar (`audit.jsonl.state`) advanced on every append; `verify_chain()` fails on tail truncation, full wipe, tampered checkpoint, or a checkpoint more than one entry behind (crash window tolerated). Residual: attacker who captures and replays an old checkpoint matching a truncated tail is undetectable without an external anchor. (Threat model P2-4) | ✅ DONE 2026-07-14 | Medium |
 | 16 | **RR-H6: Integrity-protect plaintext metadata** — AAD now covers all plaintext metadata (`alias`, `auth_type`, `description`, `created_at`, `rotated_at`, `expires_at`). Ordered legacy fallback (alias-only, then no-AAD) succeeds only for genuinely-legacy blobs and warns; `migrate_aad()` upgrades in place, exposed as `coffer migrate` in the CLI (audited as `vault.aad_migrated`). Retiring the fallbacks entirely (RR-L6) still open. (Threat model P2-2) | ✅ DONE 2026-07-14 | Medium |
-| 17 | **RR-H4: Rate limiting on MCP tool calls** — per-alias sliding window (e.g., 60 req/alias/min) in the server layer; log and reject excess. No rate limiter exists anywhere in `src` today. (Threat model P2-3) | TODO | Medium |
+| 17 | **RR-H4: Rate limiting on MCP tool calls** — per-alias sliding window (default 60 req/alias/min, env-overridable via `COFFER_RATE_LIMIT_MAX`/`_WINDOW`) enforced in the server layer on all four credential-using tools, before credential resolution. Rejections return structured `RATE_LIMITED` errors with retry-after and are audited as `rate.limited`; rejected attempts don't consume window slots. (Threat model P2-3) | ✅ DONE 2026-07-14 | Medium |
 
 ## Tier 3 — Enterprise readiness
 
@@ -77,3 +77,4 @@
 | RR-H6: Full-metadata AAD + migrate_aad() (tamper-evident expires_at/auth_type/description) | 2026-07-14 |
 | Fix: stale comment in browser/__init__.py (claimed httpx-only, is Playwright bridge) | 2026-07-14 |
 | CLI: `coffer migrate` command wiring migrate_aad() (reports legacy-upgraded count, audited) | 2026-07-14 |
+| RR-H4: Per-alias sliding-window rate limiting on credential-using MCP tools | 2026-07-14 |

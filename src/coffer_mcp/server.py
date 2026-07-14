@@ -39,6 +39,11 @@ from coffer_mcp.credential_guard import (
     create_rejection_response,
     log_violation,
 )
+from coffer_mcp.ratelimit import (
+    DEFAULT_MAX_REQUESTS,
+    DEFAULT_WINDOW_SECONDS,
+    RateLimiter,
+)
 from coffer_mcp.secmem import harden_process
 from coffer_mcp.store import EncryptedStore, get_master_key
 from coffer_mcp.tools.vault_http_request import vault_http_request as _vault_http_request
@@ -91,6 +96,52 @@ def _get_audit() -> AuditLogger:
                 hmac_key = hashlib.sha256(b"coffer-audit-hmac:" + master_key).digest()
                 _audit = AuditLogger(hmac_key=hmac_key, source="mcp")
     return _audit
+
+
+# Per-alias rate limiter for credential-using tools (RR-H4). Bounds how
+# fast a (possibly prompt-injected) session can fire authenticated
+# requests. Overridable via env for testing/ops.
+
+
+def _make_rate_limiter() -> RateLimiter:
+    import os
+
+    try:
+        max_req = int(os.environ.get("COFFER_RATE_LIMIT_MAX", DEFAULT_MAX_REQUESTS))
+        window = float(os.environ.get("COFFER_RATE_LIMIT_WINDOW", DEFAULT_WINDOW_SECONDS))
+        return RateLimiter(max_requests=max_req, window_seconds=window)
+    except ValueError:
+        return RateLimiter()
+
+
+_rate_limiter = _make_rate_limiter()
+
+
+def _check_rate_limit(alias: str, tool: str) -> str | None:
+    """Return a JSON error string if `alias` is over its rate limit.
+
+    Rejections are audited. Runs before credential resolution so that
+    probing invalid aliases is limited the same as legitimate use.
+    """
+    allowed, retry_after = _rate_limiter.check(alias)
+    if allowed:
+        return None
+    from coffer_mcp.errors import RATE_LIMITED, error_response
+
+    _get_audit().log(
+        "rate.limited",
+        alias,
+        "failure",
+        {"tool": tool, "retry_after_seconds": round(retry_after, 1)},
+    )
+    return json.dumps(
+        error_response(
+            RATE_LIMITED,
+            f"Rate limit exceeded for credential '{alias}'. "
+            f"Retry in {retry_after:.1f}s.",
+        ),
+        indent=2,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -149,6 +200,10 @@ async def coffer_http_request(
     if violation:
         log_violation(violation, logger=_get_audit())
         return json.dumps(create_rejection_response(violation), indent=2)
+
+    limited = _check_rate_limit(alias, "coffer_http_request")
+    if limited:
+        return limited
 
     try:
         body_dict = json.loads(body) if body else None
@@ -211,6 +266,10 @@ async def coffer_web_login(
         log_violation(violation, logger=_get_audit())
         return json.dumps(create_rejection_response(violation), indent=2)
 
+    limited = _check_rate_limit(alias, "coffer_web_login")
+    if limited:
+        return limited
+
     result = await _browser_web_login(
         store=_get_store(),
         audit=_get_audit(),
@@ -249,6 +308,10 @@ async def coffer_web_fetch(
     if violation:
         log_violation(violation, logger=_get_audit())
         return json.dumps(create_rejection_response(violation), indent=2)
+
+    limited = _check_rate_limit(alias, "coffer_web_fetch")
+    if limited:
+        return limited
 
     result = await _browser_web_fetch(
         store=_get_store(),
@@ -300,6 +363,10 @@ async def coffer_test(
     if violation:
         log_violation(violation, logger=_get_audit())
         return json.dumps(create_rejection_response(violation), indent=2)
+
+    limited = _check_rate_limit(alias, "coffer_test")
+    if limited:
+        return limited
 
     result = await _vault_test(
         store=_get_store(),
