@@ -50,9 +50,7 @@ def _make_legacy_blob(store, alias="legacy-1"):
         "rotated_at": 1.0,
         "expires_at": None,
     }
-    store._path.write_text(
-        json.dumps({"version": 2, "credentials": [blob]}), encoding="utf-8"
-    )
+    store._path.write_text(json.dumps({"version": 2, "credentials": [blob]}), encoding="utf-8")
 
 
 class TestMigrateCommand:
@@ -83,7 +81,9 @@ class TestMigrateCommand:
     def test_current_entries_reported_as_current(self, runner, store):
         store.add(
             CredentialEntry(
-                alias="fresh", auth_type="bearer_token", secret="x",
+                alias="fresh",
+                auth_type="bearer_token",
+                secret="x",
                 allowed_urls=["https://api.example.com/*"],
             )
         )

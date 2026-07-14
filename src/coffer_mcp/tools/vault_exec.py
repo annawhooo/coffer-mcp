@@ -80,9 +80,7 @@ async def vault_exec(
             "failure",
             {"tool": "coffer_exec", "reason": "not_found", "agent_reason": reason},
         )
-        return error_response(
-            CREDENTIAL_NOT_FOUND, f"No credential found with alias '{alias}'"
-        )
+        return error_response(CREDENTIAL_NOT_FOUND, f"No credential found with alias '{alias}'")
 
     # 2. Expiry check
     if entry.expires_at and time.time() > entry.expires_at:

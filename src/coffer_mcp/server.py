@@ -138,8 +138,7 @@ def _check_rate_limit(alias: str, tool: str) -> str | None:
     return json.dumps(
         error_response(
             RATE_LIMITED,
-            f"Rate limit exceeded for credential '{alias}'. "
-            f"Retry in {retry_after:.1f}s.",
+            f"Rate limit exceeded for credential '{alias}'. Retry in {retry_after:.1f}s.",
         ),
         indent=2,
     )

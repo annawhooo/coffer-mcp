@@ -384,9 +384,7 @@ class EncryptedStore:
         except InvalidTag:
             try:
                 # Legacy: alias-only AAD (store format v2)
-                raw_plaintext = self._gcm.decrypt(
-                    nonce, ciphertext, blob["alias"].encode("utf-8")
-                )
+                raw_plaintext = self._gcm.decrypt(nonce, ciphertext, blob["alias"].encode("utf-8"))
             except InvalidTag:
                 # Legacy: no AAD (store format v1). If this also fails,
                 # InvalidTag propagates — tampered entry or wrong key.

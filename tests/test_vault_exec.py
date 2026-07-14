@@ -189,9 +189,7 @@ class TestVaultExec:
         store.add_allowed_command("exec-cred", [PYTHON, str(script)])
 
         started = time.monotonic()
-        result = await vault_exec(
-            store, audit, "exec-cred", [PYTHON, str(script)], timeout_s=1
-        )
+        result = await vault_exec(store, audit, "exec-cred", [PYTHON, str(script)], timeout_s=1)
         elapsed = time.monotonic() - started
         assert result["code"] == "EXEC_TIMEOUT"
         assert elapsed < 30  # killed, not waited out
@@ -262,13 +260,14 @@ class TestServerTool:
         script.write_text("print('hello from child')\n", encoding="utf-8")
         server._store.add(
             CredentialEntry(
-                alias="e2e", auth_type="web_login", username="u", secret="s3cret-value",
+                alias="e2e",
+                auth_type="web_login",
+                username="u",
+                secret="s3cret-value",
             )
         )
         server._store.add_allowed_command("e2e", [PYTHON, str(script)])
 
-        result = json.loads(
-            await server.coffer_exec("e2e", json.dumps([PYTHON, str(script)]))
-        )
+        result = json.loads(await server.coffer_exec("e2e", json.dumps([PYTHON, str(script)])))
         assert result["status"] == "ok"
         assert "hello from child" in result["stdout"]

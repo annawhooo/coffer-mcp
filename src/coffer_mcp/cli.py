@@ -533,8 +533,7 @@ def migrate():
     )
     if legacy:
         click.echo(
-            f"Re-encrypted {migrated} credential(s); "
-            f"{legacy} upgraded from a legacy AAD format."
+            f"Re-encrypted {migrated} credential(s); {legacy} upgraded from a legacy AAD format."
         )
     else:
         click.echo(f"Re-encrypted {migrated} credential(s); all were already current.")

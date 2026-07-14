@@ -133,9 +133,13 @@ class AuditLogger:
 
         if not entries:
             if state_status == "ok":
-                return False, 0, (
-                    "Truncation detected: audit log is empty but the checkpoint "
-                    f"expects the chain to end at {state['event_id']}"
+                return (
+                    False,
+                    0,
+                    (
+                        "Truncation detected: audit log is empty but the checkpoint "
+                        f"expects the chain to end at {state['event_id']}"
+                    ),
                 )
             if state_status == "invalid":
                 return False, 0, "Audit checkpoint file is invalid or tampered"
@@ -160,9 +164,13 @@ class AuditLogger:
         if state_status == "invalid":
             return False, len(entries), "Audit checkpoint file is invalid or tampered"
         if state_status == "missing":
-            return True, len(entries), (
-                f"Chain integrity: VALID ({len(entries)} entries) — "
-                "no checkpoint file; truncation detection unavailable until the next append"
+            return (
+                True,
+                len(entries),
+                (
+                    f"Chain integrity: VALID ({len(entries)} entries) — "
+                    "no checkpoint file; truncation detection unavailable until the next append"
+                ),
             )
 
         last = entries[-1]
@@ -174,10 +182,14 @@ class AuditLogger:
         # and that entry's prev_hash is the checkpointed hash.
         one_ahead = last.get("prev_hash") == state["hash"]
         if not (exact_match or one_ahead):
-            return False, len(entries), (
-                "Truncation detected: checkpoint expects the chain to end at "
-                f"{state['event_id']}, but the log ends at {last.get('event_id')} "
-                "with a non-matching hash"
+            return (
+                False,
+                len(entries),
+                (
+                    "Truncation detected: checkpoint expects the chain to end at "
+                    f"{state['event_id']}, but the log ends at {last.get('event_id')} "
+                    "with a non-matching hash"
+                ),
             )
 
         return True, len(entries), f"Chain integrity: VALID ({len(entries)} entries)"
