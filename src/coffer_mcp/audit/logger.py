@@ -46,6 +46,10 @@ class AuditLogger:
         self, log_path: Path | None = None, hmac_key: bytes | None = None, source: str = ""
     ):
         self._path = log_path or Path.home() / ".coffer" / "audit.jsonl"
+        # Checkpoint sidecar for truncation detection (RR-H5). Records the
+        # last entry's id+hash under an HMAC so an attacker with file write
+        # access cannot silently delete entries from the end of the log.
+        self._state_path = Path(str(self._path) + ".state")
         self._hmac_key = hmac_key
         self._source = source
         self._warned_no_hmac = False
@@ -110,6 +114,11 @@ class AuditLogger:
                 f.write(json.dumps(event_data) + "\n")
             self._last_hash = event_hash
 
+            # Advance the truncation-detection checkpoint. Done after the
+            # append so a crash between the two writes leaves the checkpoint
+            # exactly one entry behind (tolerated by verify_chain).
+            self._write_state(event_data["event_id"], event_hash)
+
             return AuditEvent(**event_data)
 
     def verify_chain(self) -> tuple[bool, int, str]:
@@ -120,7 +129,16 @@ class AuditLogger:
             Tuple of (is_valid, entry_count, message).
         """
         entries = self._read_all()
+        state_status, state = self._read_state()
+
         if not entries:
+            if state_status == "ok":
+                return False, 0, (
+                    "Truncation detected: audit log is empty but the checkpoint "
+                    f"expects the chain to end at {state['event_id']}"
+                )
+            if state_status == "invalid":
+                return False, 0, "Audit checkpoint file is invalid or tampered"
             return True, 0, "Audit log is empty"
 
         prev_hash = "genesis"
@@ -136,6 +154,31 @@ class AuditLogger:
                 return False, i + 1, f"Chain broken at entry {i + 1}: hash mismatch (tampered)"
 
             prev_hash = entry["hash"]
+
+        # Chain is internally consistent — now prove the tail hasn't been
+        # truncated by comparing against the checkpoint (RR-H5).
+        if state_status == "invalid":
+            return False, len(entries), "Audit checkpoint file is invalid or tampered"
+        if state_status == "missing":
+            return True, len(entries), (
+                f"Chain integrity: VALID ({len(entries)} entries) — "
+                "no checkpoint file; truncation detection unavailable until the next append"
+            )
+
+        last = entries[-1]
+        exact_match = (
+            last.get("event_id") == state["event_id"] and last.get("hash") == state["hash"]
+        )
+        # Crash window: the process appended an entry but died before
+        # advancing the checkpoint. The log is then exactly one entry ahead,
+        # and that entry's prev_hash is the checkpointed hash.
+        one_ahead = last.get("prev_hash") == state["hash"]
+        if not (exact_match or one_ahead):
+            return False, len(entries), (
+                "Truncation detected: checkpoint expects the chain to end at "
+                f"{state['event_id']}, but the log ends at {last.get('event_id')} "
+                "with a non-matching hash"
+            )
 
         return True, len(entries), f"Chain integrity: VALID ({len(entries)} entries)"
 
@@ -156,6 +199,54 @@ class AuditLogger:
         return list(reversed(entries[-limit:]))
 
     # -- internal helpers ----------------------------------------------------
+
+    def _state_mac(self, event_id: str, entry_hash: str) -> str:
+        """MAC over the checkpoint contents, keyed like the chain hashes."""
+        return self._compute_hash({"event_id": event_id, "hash": entry_hash})
+
+    def _write_state(self, event_id: str, entry_hash: str) -> None:
+        """Atomically write the truncation-detection checkpoint."""
+        state = {
+            "event_id": event_id,
+            "hash": entry_hash,
+            "mac": self._state_mac(event_id, entry_hash),
+        }
+        tmp_path = self._state_path.with_suffix(".state.tmp")
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(state, f)
+        secure_file(tmp_path)
+        tmp_path.replace(self._state_path)
+        secure_file(self._state_path)
+
+    def _read_state(self) -> tuple[str, dict | None]:
+        """Read and authenticate the checkpoint.
+
+        Returns (status, state) where status is:
+            "ok"      — checkpoint present and MAC valid
+            "missing" — no checkpoint file (legacy log or first run)
+            "invalid" — checkpoint unreadable or MAC mismatch
+        """
+        try:
+            with open(self._state_path, "r", encoding="utf-8") as f:
+                state = json.load(f)
+        except FileNotFoundError:
+            return "missing", None
+        except (json.JSONDecodeError, OSError):
+            return "invalid", None
+
+        if not isinstance(state, dict):
+            return "invalid", None
+        event_id = state.get("event_id")
+        entry_hash = state.get("hash")
+        mac = state.get("mac")
+        if not (isinstance(event_id, str) and isinstance(entry_hash, str)):
+            return "invalid", None
+        import hmac as hmac_mod
+
+        expected = self._state_mac(event_id, entry_hash)
+        if not (isinstance(mac, str) and hmac_mod.compare_digest(mac, expected)):
+            return "invalid", None
+        return "ok", {"event_id": event_id, "hash": entry_hash}
 
     def _read_last_hash_from_disk(self) -> str:
         """Read the hash of the last entry from disk. Used at init only."""

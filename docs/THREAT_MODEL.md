@@ -467,6 +467,8 @@ For `oauth2_client_credentials`, the access token is obtained from the token end
 | **HTTP method validation** | T-3.1 | `security.py:validate_http_method()` -- whitelist of valid methods |
 | **AAD in encryption** | T-5.1 (alias swap) | `encrypted_store.py` -- alias used as AAD prevents cross-entry ciphertext substitution |
 | **Credential expiry** | Stale credentials | `CredentialEntry.expires_at` checked before each use |
+| **Audit checkpoint sidecar** (added 2026-07-14) | T-5.2 / RR-H5 truncation | `audit/logger.py` -- HMAC-MAC'd `audit.jsonl.state` advanced per append; `verify_chain()` tail check |
+| **Full-metadata AAD** (added 2026-07-14) | T-5.1 / RR-H6 metadata tampering | `encrypted_store.py:_metadata_aad()` -- all plaintext fields bound into GCM tag; `migrate_aad()` upgrades legacy blobs |
 
 ---
 
@@ -487,8 +489,8 @@ For `oauth2_client_credentials`, the access token is obtained from the token end
 | **RR-H2** | Plaintext metadata in `credentials.json` | `alias`, `auth_type`, `description`, `created_at`, `rotated_at`, `expires_at` are stored unencrypted. File read access reveals the user's complete service inventory. | I-5.1 |
 | **RR-H3** | `KeyError` bypass disables URL allowlist in `browser_web_fetch` | If a credential is deleted while a browser session is active, the `except KeyError: pass` block at `playwright_bridge.py` line 229 skips URL allowlist enforcement. The fetch proceeds to any URL. | E-6.2 |
 | **RR-H4** | No rate limiting on MCP tool calls | A prompt-injected LLM can flood target APIs with authenticated requests. No per-alias, per-URL, or global rate limits exist. | D-3.1 |
-| **RR-H5** | Audit log truncation undetectable | An attacker with file write access can delete entries from the end of `audit.jsonl`. The remaining chain validates correctly because there is no entry count, tail sentinel, or periodic checkpoint. | T-5.2 |
-| **RR-H6** | Unencrypted plaintext metadata fields have no integrity protection | The `alias`, `auth_type`, `expires_at`, and other fields stored alongside the encrypted blob in `credentials.json` are not covered by the GCM authentication tag (only the inner payload is). An attacker with file write access can modify `expires_at` to `null` (disabling expiry checks), change `auth_type`, or alter `description` without detection. While the `alias` is used as AAD and thus bound to the ciphertext, the other fields are not. | T-5.1 |
+| **RR-H5** | ~~Audit log truncation undetectable~~ **MITIGATED 2026-07-14** | HMAC-protected checkpoint sidecar (`audit.jsonl.state`) records the last entry's id+hash on every append; `verify_chain()` fails on tail truncation, full wipe, or a tampered/stale checkpoint (one-entry crash window tolerated). Residual: replay of a captured old checkpoint alongside a matching truncation is undetectable without an anchor outside the attacker's write access; checkpoint deletion downgrades to a warning (detection unavailable) rather than failure, to support legacy logs. | T-5.2 |
+| **RR-H6** | ~~Unencrypted plaintext metadata fields have no integrity protection~~ **MITIGATED 2026-07-14** | AAD now binds all plaintext metadata (`alias`, `auth_type`, `description`, `created_at`, `rotated_at`, `expires_at`) into the GCM tag. Tampering any field fails decryption (fail closed). Legacy blobs (alias-only or no AAD) still decrypt via ordered fallback with a warning until `migrate_aad()` is run; the fallback cannot be exploited against upgraded blobs. Residual: legacy blobs remain tamperable until migrated (see RR-L6). | T-5.1 |
 
 ### Medium
 

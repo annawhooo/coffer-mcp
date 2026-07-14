@@ -9,6 +9,7 @@ Usage:
     coffer rotate ALIAS  Replace the secret for an existing credential
     coffer remove ALIAS  Remove a credential
     coffer audit         View audit log and verify integrity
+    coffer migrate       Upgrade entries to the integrity-protected format
     coffer export PATH   Export all credentials to an encrypted backup file
     coffer import PATH    Import credentials from an encrypted backup file
     coffer rekey         Re-encrypt the vault with a new master passphrase
@@ -491,6 +492,51 @@ def rekey():
 
     click.echo(f"Successfully re-encrypted {rekeyed} credential(s) with new key.")
     click.echo(f"New key fingerprint: {new_key[:4].hex()}...")
+
+
+@main.command()
+def migrate():
+    """Upgrade stored credentials to the integrity-protected format.
+
+    Re-encrypts every credential so all plaintext metadata fields
+    (auth_type, description, timestamps, expires_at) are bound into the
+    GCM authentication tag. Entries written by older versions are not
+    protected against metadata tampering until this runs. Atomic: if any
+    entry fails to decrypt, nothing is changed.
+    """
+    import warnings as _warnings
+
+    store = _get_store()
+    audit = _get_audit()
+
+    count = len(store.list_aliases())
+    if count == 0:
+        click.echo("Vault is empty -- nothing to migrate.")
+        return
+
+    try:
+        with _warnings.catch_warnings(record=True) as caught:
+            _warnings.simplefilter("always")
+            migrated = store.migrate_aad()
+    except Exception as e:
+        click.echo(f"Error during migration: {e}", err=True)
+        click.echo("The vault file was not modified.", err=True)
+        sys.exit(1)
+
+    legacy = sum(1 for w in caught if "legacy AAD" in str(w.message))
+    audit.log(
+        "vault.aad_migrated",
+        "*",
+        "success",
+        {"credentials": migrated, "legacy_upgraded": legacy},
+    )
+    if legacy:
+        click.echo(
+            f"Re-encrypted {migrated} credential(s); "
+            f"{legacy} upgraded from a legacy AAD format."
+        )
+    else:
+        click.echo(f"Re-encrypted {migrated} credential(s); all were already current.")
 
 
 @main.command(name="export")
