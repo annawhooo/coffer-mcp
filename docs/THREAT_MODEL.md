@@ -1,8 +1,9 @@
 # Coffer MCP -- STRIDE Threat Model
 
-**Version:** 1.0
-**Date:** 2026-03-25
+**Version:** 1.1
+**Date:** 2026-07-14 (v1.0: 2026-03-25)
 **Scope:** All components of `coffer-mcp` v0.1.0
+**v1.1 changes:** Added TB-7 (Server ↔ Local Subprocess / coffer_exec). Closed RR-H4, RR-H5, RR-H6 (see §5–6). Added RR-M9, RR-M10.
 **Methodology:** STRIDE (Spoofing, Tampering, Repudiation, Information Disclosure, Denial of Service, Elevation of Privilege)
 
 ---
@@ -118,6 +119,19 @@ The server reads/writes encrypted credential files and audit logs in `~/.coffer/
 ### TB-6: Server <-> Browser (Playwright)
 
 The server controls a headless Chromium instance via Playwright. The browser executes JavaScript from arbitrary web pages and holds authenticated sessions in memory.
+
+### TB-7: Server <-> Local Subprocess (coffer_exec) — added 2026-07-14
+
+The server spawns a pre-allowlisted local process with the credential injected into the child's environment variables. Unlike TB-4/TB-6, the credential intentionally leaves the server process — the design goal is scoped delegation: the *user*, at allowlist-add time (TB-1, fully trusted), decides exactly which command may receive which credential. The LLM can only trigger an exact allowlisted invocation; it cannot choose the binary, arguments, working directory, or environment variable names.
+
+Design invariants (enforced, not advisory):
+1. `allowed_commands` lives **inside the encrypted payload** (like `allowed_urls`), so it is confidential and integrity-protected by the GCM tag. Fail-closed when empty.
+2. An invocation matches only by **exact argv equality** against an allowlisted entry — no prefix matching, no wildcard, no extra arguments.
+3. `argv[0]` must be an **absolute path** (rejected otherwise) to prevent PATH-hijack substitution of the binary.
+4. The working directory is fixed per allowlist entry at add time; the LLM cannot set it.
+5. The credential is passed via child **environment only** (`COFFER_USERNAME`, `COFFER_SECRET`) — never argv (visible in process listings), never temp files.
+6. Bounded execution: wall-clock timeout with kill; stdout/stderr truncated and scrubbed with `sanitize_response()` before returning to the LLM.
+7. Every invocation (allowed or rejected) is audited and rate-limited like other credential-using tools.
 
 ---
 
@@ -373,6 +387,53 @@ The server controls a headless Chromium instance via Playwright. The browser exe
 | E-6.1 | Browser escape / Chromium exploit | A malicious page could exploit a Chromium vulnerability to escape the browser sandbox and execute code on the host. This is a low-probability but critical-impact threat. |
 | E-6.2 | `KeyError` bypass in `browser_web_fetch` | At `playwright_bridge.py` line 229-230, if the credential is deleted while a session is active, the `except KeyError: pass` block skips the URL allowlist check entirely. The fetch proceeds without any URL restriction. |
 
+### 3.7 TB-7: Server <-> Local Subprocess (coffer_exec)
+
+#### S -- Spoofing
+
+| ID | Threat | Description |
+|---|---|---|
+| S-7.1 | Binary substitution via PATH | If `argv[0]` were a bare name, an attacker could place a malicious binary earlier on PATH. **Mitigated by design**: absolute `argv[0]` required at both allowlist-add and check time. |
+| S-7.2 | TOCTOU binary replacement | A same-user attacker replaces the binary at the allowlisted absolute path between the allowlist check and `exec`. Residual — a same-user attacker with filesystem write access is largely outside the model (they could equally replace the coffer package itself). |
+
+#### T -- Tampering
+
+| ID | Threat | Description |
+|---|---|---|
+| T-7.1 | Allowlist tampering on disk | An attacker edits `allowed_commands` in `credentials.json` to point at their own binary. **Mitigated**: `allowed_commands` is inside the encrypted payload; tampering breaks the GCM tag (fail closed, per RR-H6 fix). |
+| T-7.2 | Argument injection by the LLM | A prompt-injected LLM appends flags (e.g., an exfil `--output \\\\attacker\\share`). **Mitigated by design**: exact argv equality — any deviation is rejected. |
+| T-7.3 | cwd manipulation | Changing the working directory can change what a relative-path script does or where output lands. **Mitigated by design**: cwd is fixed per allowlist entry at add time; not an LLM-settable parameter. |
+
+#### R -- Repudiation
+
+| ID | Threat | Description |
+|---|---|---|
+| R-7.1 | Child actions unaudited | The audit log records the invocation (argv, exit code, duration, agent_reason) but not what the child process did (network calls, file writes). Same class of residual as R-6.1 for browser pages. |
+
+#### I -- Information Disclosure
+
+| ID | Threat | Description |
+|---|---|---|
+| I-7.1 | Env inheritance by grandchildren | The child's environment (including `COFFER_SECRET`) is inherited by any process the child spawns. A compromised or careless allowlisted script leaks the secret downstream. Residual — documented; guidance is to allowlist only scripts that don't spawn untrusted children. |
+| I-7.2 | Secret echoed to stdout/stderr | The child may print its own environment or the secret (e.g., debug logging). **Mitigated**: output is scrubbed with `sanitize_response()` (literal, base64, URL-encoded forms) before returning to the LLM; truncated to bound size. |
+| I-7.3 | Secret in child crash artifacts | The child process is not covered by `harden_process()` — its core dumps/swap may contain the secret. Residual; the exposure window is the child's lifetime, after which the OS reclaims memory (this bounded window is precisely the subprocess-isolation benefit named in Appendix A). |
+| I-7.4 | Env visible via /proc or debugger | On Linux, `/proc/<pid>/environ` is readable by the same user; on Windows, a same-user debugger can read child memory. Same-user residual, consistent with I-2.2. |
+
+#### D -- Denial of Service
+
+| ID | Threat | Description |
+|---|---|---|
+| D-7.1 | Runaway child process | **Mitigated**: wall-clock timeout (clamped), child killed on expiry. Grandchildren may survive the kill (process-tree termination is best-effort per platform). |
+| D-7.2 | Output flooding | A child emitting gigabytes to stdout could exhaust memory. **Mitigated**: output truncated to a fixed cap before processing. |
+| D-7.3 | Invocation flooding | **Mitigated**: per-alias rate limiting applies to coffer_exec like all credential-using tools (RR-H4 fix). |
+
+#### E -- Elevation of Privilege
+
+| ID | Threat | Description |
+|---|---|---|
+| E-7.1 | Allowlisted command is itself powerful | If the user allowlists a shell (`cmd /c`, `bash -c`) or interpreter with attacker-influenceable input, exact-argv matching provides no protection against what the script then does. This is a *user configuration* hazard — documented guidance: allowlist specific scripts, never shells or bare interpreters with variable arguments. |
+| E-7.2 | Server privilege inheritance | The child runs with the server's full OS privileges. No sandboxing (job objects, cgroups) in v1 — documented limitation. |
+
 ---
 
 ## 4. The Novel MCP Boundary -- Deep Dive
@@ -467,6 +528,9 @@ For `oauth2_client_credentials`, the access token is obtained from the token end
 | **HTTP method validation** | T-3.1 | `security.py:validate_http_method()` -- whitelist of valid methods |
 | **AAD in encryption** | T-5.1 (alias swap) | `encrypted_store.py` -- alias used as AAD prevents cross-entry ciphertext substitution |
 | **Credential expiry** | Stale credentials | `CredentialEntry.expires_at` checked before each use |
+| **Audit checkpoint sidecar** (added 2026-07-14) | T-5.2 / RR-H5 truncation | `audit/logger.py` -- HMAC-MAC'd `audit.jsonl.state` advanced per append; `verify_chain()` tail check |
+| **Full-metadata AAD** (added 2026-07-14) | T-5.1 / RR-H6 metadata tampering | `encrypted_store.py:_metadata_aad()` -- all plaintext fields bound into GCM tag; `migrate_aad()` upgrades legacy blobs |
+| **Per-alias rate limiting** (added 2026-07-14) | D-3.1 / RR-H4 tool-call flooding | `ratelimit.py` sliding window, enforced in `server.py` before credential resolution on all credential-using tools |
 
 ---
 
@@ -486,9 +550,9 @@ For `oauth2_client_credentials`, the access token is obtained from the token end
 | **RR-H1** | Master key never zeroed from memory | The 32-byte master key persists in Python process memory indefinitely. Memory forensics, core dumps, or swap exposure could reveal it. Python's garbage collector does not guarantee timely or secure memory clearing. | I-2.1 |
 | **RR-H2** | Plaintext metadata in `credentials.json` | `alias`, `auth_type`, `description`, `created_at`, `rotated_at`, `expires_at` are stored unencrypted. File read access reveals the user's complete service inventory. | I-5.1 |
 | **RR-H3** | `KeyError` bypass disables URL allowlist in `browser_web_fetch` | If a credential is deleted while a browser session is active, the `except KeyError: pass` block at `playwright_bridge.py` line 229 skips URL allowlist enforcement. The fetch proceeds to any URL. | E-6.2 |
-| **RR-H4** | No rate limiting on MCP tool calls | A prompt-injected LLM can flood target APIs with authenticated requests. No per-alias, per-URL, or global rate limits exist. | D-3.1 |
-| **RR-H5** | Audit log truncation undetectable | An attacker with file write access can delete entries from the end of `audit.jsonl`. The remaining chain validates correctly because there is no entry count, tail sentinel, or periodic checkpoint. | T-5.2 |
-| **RR-H6** | Unencrypted plaintext metadata fields have no integrity protection | The `alias`, `auth_type`, `expires_at`, and other fields stored alongside the encrypted blob in `credentials.json` are not covered by the GCM authentication tag (only the inner payload is). An attacker with file write access can modify `expires_at` to `null` (disabling expiry checks), change `auth_type`, or alter `description` without detection. While the `alias` is used as AAD and thus bound to the ciphertext, the other fields are not. | T-5.1 |
+| **RR-H4** | ~~No rate limiting on MCP tool calls~~ **MITIGATED 2026-07-14** | Per-alias sliding-window limiter (`ratelimit.py`, default 60 req/alias/min) enforced in `server.py` on coffer_http_request, coffer_web_login, coffer_web_fetch, and coffer_test, before credential resolution. Rejections are audited (`rate.limited`) and returned as structured `RATE_LIMITED` errors. Residual: limits are per-process (CLI and a second server instance each get their own window); read-only tools (coffer_list, coffer_audit) remain unlimited by design. | D-3.1 |
+| **RR-H5** | ~~Audit log truncation undetectable~~ **MITIGATED 2026-07-14** | HMAC-protected checkpoint sidecar (`audit.jsonl.state`) records the last entry's id+hash on every append; `verify_chain()` fails on tail truncation, full wipe, or a tampered/stale checkpoint (one-entry crash window tolerated). Residual: replay of a captured old checkpoint alongside a matching truncation is undetectable without an anchor outside the attacker's write access; checkpoint deletion downgrades to a warning (detection unavailable) rather than failure, to support legacy logs. | T-5.2 |
+| **RR-H6** | ~~Unencrypted plaintext metadata fields have no integrity protection~~ **MITIGATED 2026-07-14** | AAD now binds all plaintext metadata (`alias`, `auth_type`, `description`, `created_at`, `rotated_at`, `expires_at`) into the GCM tag. Tampering any field fails decryption (fail closed). Legacy blobs (alias-only or no AAD) still decrypt via ordered fallback with a warning until `migrate_aad()` is run; the fallback cannot be exploited against upgraded blobs. Residual: legacy blobs remain tamperable until migrated (see RR-L6). | T-5.1 |
 
 ### Medium
 
@@ -502,6 +566,8 @@ For `oauth2_client_credentials`, the access token is obtained from the token end
 | **RR-M6** | No caller attribution in audit log | Audit events do not record which MCP client, conversation ID, or user session initiated the request. Multiple LLM sessions cannot be distinguished. | R-3.1 |
 | **RR-M7** | Browser context limit unbounded | No cap on concurrent Playwright sessions. Each `coffer_web_login` allocates a browser context and page. | D-6.1 |
 | **RR-M8** | File lock has no timeout | `FileLock.acquire()` blocks indefinitely. A hung lock file blocks all Coffer operations. | T-5.3 |
+| **RR-M9** | coffer_exec: env inheritance by grandchild processes | The credential env vars pass to anything the allowlisted child spawns. Guidance: allowlist only leaf scripts that don't launch untrusted children. (Added 2026-07-14 with TB-7.) | I-7.1 |
+| **RR-M10** | coffer_exec: no child sandboxing | The child runs with full server privileges and is not covered by harden_process(); its crash artifacts may contain the secret. Exposure bounded by child lifetime. (Added 2026-07-14 with TB-7.) | I-7.3, E-7.2 |
 
 ### Low
 

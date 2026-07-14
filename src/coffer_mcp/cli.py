@@ -9,6 +9,8 @@ Usage:
     coffer rotate ALIAS  Replace the secret for an existing credential
     coffer remove ALIAS  Remove a credential
     coffer audit         View audit log and verify integrity
+    coffer migrate       Upgrade entries to the integrity-protected format
+    coffer allow-command ALIAS  Allow coffer_exec to run a command with this credential
     coffer export PATH   Export all credentials to an encrypted backup file
     coffer import PATH    Import credentials from an encrypted backup file
     coffer rekey         Re-encrypt the vault with a new master passphrase
@@ -491,6 +493,103 @@ def rekey():
 
     click.echo(f"Successfully re-encrypted {rekeyed} credential(s) with new key.")
     click.echo(f"New key fingerprint: {new_key[:4].hex()}...")
+
+
+@main.command()
+def migrate():
+    """Upgrade stored credentials to the integrity-protected format.
+
+    Re-encrypts every credential so all plaintext metadata fields
+    (auth_type, description, timestamps, expires_at) are bound into the
+    GCM authentication tag. Entries written by older versions are not
+    protected against metadata tampering until this runs. Atomic: if any
+    entry fails to decrypt, nothing is changed.
+    """
+    import warnings as _warnings
+
+    store = _get_store()
+    audit = _get_audit()
+
+    count = len(store.list_aliases())
+    if count == 0:
+        click.echo("Vault is empty -- nothing to migrate.")
+        return
+
+    try:
+        with _warnings.catch_warnings(record=True) as caught:
+            _warnings.simplefilter("always")
+            migrated = store.migrate_aad()
+    except Exception as e:
+        click.echo(f"Error during migration: {e}", err=True)
+        click.echo("The vault file was not modified.", err=True)
+        sys.exit(1)
+
+    legacy = sum(1 for w in caught if "legacy AAD" in str(w.message))
+    audit.log(
+        "vault.aad_migrated",
+        "*",
+        "success",
+        {"credentials": migrated, "legacy_upgraded": legacy},
+    )
+    if legacy:
+        click.echo(
+            f"Re-encrypted {migrated} credential(s); {legacy} upgraded from a legacy AAD format."
+        )
+    else:
+        click.echo(f"Re-encrypted {migrated} credential(s); all were already current.")
+
+
+@main.command(name="allow-command")
+@click.argument("alias")
+@click.option(
+    "--argv-json",
+    required=True,
+    help='Exact command as a JSON array, e.g. \'["C:\\\\Python311\\\\python.exe", "scraper.py"]\'. '
+    "argv[0] must be an absolute path.",
+)
+@click.option(
+    "--cwd",
+    default=None,
+    help="Fixed absolute working directory for the command (optional).",
+)
+def allow_command(alias, argv_json, cwd):
+    """Allow coffer_exec to run a command with this credential's secret
+    in its environment.
+
+    The command is matched by exact argv equality — the LLM cannot add,
+    remove, or change arguments. Only allowlist specific scripts; never
+    shells (cmd /c, bash -c) or bare interpreters, which would defeat
+    the exact-match protection.
+    """
+    import json as _json
+
+    try:
+        argv = _json.loads(argv_json)
+    except _json.JSONDecodeError as e:
+        click.echo(f"Error: --argv-json is not valid JSON: {e}", err=True)
+        sys.exit(1)
+
+    store = _get_store()
+    audit = _get_audit()
+
+    try:
+        count = store.add_allowed_command(alias, argv, cwd=cwd)
+    except KeyError:
+        click.echo(f"No credential found with alias '{alias}'.", err=True)
+        sys.exit(1)
+    except ValueError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+    audit.log(
+        "credential.command_allowed",
+        alias,
+        "success",
+        {"argv": argv, "cwd": cwd},
+    )
+    click.echo(f"Command allowed for '{alias}' ({count} command(s) on allowlist).")
+    click.echo("Note: the credential is passed to this command via the environment")
+    click.echo("variables COFFER_USERNAME and COFFER_SECRET.")
 
 
 @main.command(name="export")

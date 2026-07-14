@@ -22,6 +22,16 @@
 | 7 | **Mutation testing** — cosmic-ray to verify tests actually catch bugs (100% mutation kill rate) | ✅ DONE | Half day |
 | 8 | **File permissions hardening** — set 0600 on credentials.json and audit.jsonl on creation; Windows ACLs for current user only | ✅ DONE | 1 hour |
 
+## Tier 2.5 — Open High residual risks (from THREAT_MODEL.md §6)
+
+*Added 2026-07-14: these were recommended in the threat model (P2-2/P2-3/P2-4) but never carried into this task list. Verified still open against the code on 2026-07-14. Priority: ahead of all Tier 3 items, including #14 (coffer_exec), which should not land on top of an audit chain that can't detect truncation.*
+
+| # | Item | Status | Effort |
+|---|------|--------|--------|
+| 15 | **RR-H5: Audit log truncation detection** — HMAC-protected checkpoint sidecar (`audit.jsonl.state`) advanced on every append; `verify_chain()` fails on tail truncation, full wipe, tampered checkpoint, or a checkpoint more than one entry behind (crash window tolerated). Residual: attacker who captures and replays an old checkpoint matching a truncated tail is undetectable without an external anchor. (Threat model P2-4) | ✅ DONE 2026-07-14 | Medium |
+| 16 | **RR-H6: Integrity-protect plaintext metadata** — AAD now covers all plaintext metadata (`alias`, `auth_type`, `description`, `created_at`, `rotated_at`, `expires_at`). Ordered legacy fallback (alias-only, then no-AAD) succeeds only for genuinely-legacy blobs and warns; `migrate_aad()` upgrades in place, exposed as `coffer migrate` in the CLI (audited as `vault.aad_migrated`). Retiring the fallbacks entirely (RR-L6) still open. (Threat model P2-2) | ✅ DONE 2026-07-14 | Medium |
+| 17 | **RR-H4: Rate limiting on MCP tool calls** — per-alias sliding window (default 60 req/alias/min, env-overridable via `COFFER_RATE_LIMIT_MAX`/`_WINDOW`) enforced in the server layer on all four credential-using tools, before credential resolution. Rejections return structured `RATE_LIMITED` errors with retry-after and are audited as `rate.limited`; rejected attempts don't consume window slots. (Threat model P2-3) | ✅ DONE 2026-07-14 | Medium |
+
 ## Tier 3 — Enterprise readiness
 
 | # | Item | Status | Effort |
@@ -31,6 +41,7 @@
 | 11 | **Observability** — alerting (N failed auths = lockout), metrics (usage frequency, latency), SIEM/syslog/OpenTelemetry export | TODO | 1 week |
 | 12 | **Multi-user / team support** — RBAC, key escrow, shared vaults; or explicitly document single-user boundary | TODO | Evaluate |
 | 13 | **Fix C: Generic API key pattern scanning** — response body scan for common key patterns (`sk_test_*`, `ghp_*`, `AKIA*`, etc.) regardless of whether they match the stored secret. Catches keys the sanitizer doesn't know about. | TODO | Half day |
+| 14 | **coffer_exec: scoped subprocess credential injection** — new tool + new trust boundary (TB-7: Server ↔ Local Subprocess). Motivating case: interactive Playwright scrapers that must own the browser session, which coffer_web_login/web_fetch cannot serve. Design constraints: (a) per-alias `allowed_commands` allowlist, same shape and fail-closed semantics as `allowed_urls`; (b) credential resolved server-side and passed via child process environment only — never argv (process-listing exposure), never temp files; (c) server spawns only the allowlisted command, waits for exit, then wipes; (d) audited like every other credential use, with `agent_reason`; (e) STRIDE pass on TB-7 added to THREAT_MODEL.md **before** implementation (env inheritance by grandchild processes, Windows process-listing exposure, command tampering between allowlist check and spawn, stdout/stderr sanitization before return to LLM). Aligns with the subprocess-isolation direction already named in THREAT_MODEL.md Appendix A residual risks. | ✅ DONE 2026-07-14 | 1-2 days |
 
 ## Completed work
 
@@ -62,3 +73,9 @@
 | Enhancement: Capture `agent_reason` in expired credential events | 2026-04-04 |
 | Docs: Audit event reference (event types, status values, field schema) | 2026-04-04 |
 | Docs: Default-deny behavior for empty `--allowed-urls` | 2026-04-04 |
+| RR-H5: Audit truncation detection (HMAC checkpoint sidecar + verify_chain tail check) | 2026-07-14 |
+| RR-H6: Full-metadata AAD + migrate_aad() (tamper-evident expires_at/auth_type/description) | 2026-07-14 |
+| Fix: stale comment in browser/__init__.py (claimed httpx-only, is Playwright bridge) | 2026-07-14 |
+| CLI: `coffer migrate` command wiring migrate_aad() (reports legacy-upgraded count, audited) | 2026-07-14 |
+| RR-H4: Per-alias sliding-window rate limiting on credential-using MCP tools | 2026-07-14 |
+| coffer_exec: TB-7 STRIDE pass, allowed_commands (encrypted), vault_exec tool, `coffer allow-command` CLI | 2026-07-14 |

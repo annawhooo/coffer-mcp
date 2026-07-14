@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -39,6 +40,9 @@ class CredentialEntry:
     secret: str = ""  # password, token, or API key — never returned to the LLM
     allowed_urls: list[str] = field(default_factory=list)
     allowed_methods: list[str] = field(default_factory=lambda: ["GET"])
+    # coffer_exec allowlist: [{"argv": ["/abs/path/bin", "arg", ...], "cwd": "/abs/dir" | None}]
+    # Exact-argv match only; argv[0] must be absolute. Fail-closed when empty.
+    allowed_commands: list[dict] = field(default_factory=list)
     description: str = ""
     created_at: float = field(default_factory=time.time)
     rotated_at: float = field(default_factory=time.time)
@@ -55,6 +59,7 @@ class CredentialEntry:
             "auth_type": self.auth_type,
             "allowed_urls": self.allowed_urls,
             "allowed_methods": self.allowed_methods,
+            "allowed_commands": self.allowed_commands,
             "description": self.description,
             "created_at": self.created_at,
             "rotated_at": self.rotated_at,
@@ -185,6 +190,44 @@ class EncryptedStore:
             # Single atomic write replaces the entire file
             self._write_blobs(blobs)
 
+    def add_allowed_command(self, alias: str, argv: list[str], cwd: str | None = None) -> int:
+        """Append a command to a credential's coffer_exec allowlist.
+
+        The allowlist lives inside the encrypted payload, so it is
+        confidential and integrity-protected like the secret itself.
+
+        Args:
+            alias: The credential to modify.
+            argv: Exact argument vector; argv[0] must be an absolute path.
+            cwd: Optional fixed working directory (absolute) for the command.
+
+        Returns:
+            The new number of allowed commands for this credential.
+
+        Raises:
+            KeyError: If the alias doesn't exist.
+            ValueError: If argv/cwd fail validation.
+        """
+        if not argv or not all(isinstance(a, str) and a for a in argv):
+            raise ValueError("argv must be a non-empty list of non-empty strings")
+        if not os.path.isabs(argv[0]):
+            raise ValueError("argv[0] must be an absolute path (PATH lookup is not allowed)")
+        if cwd is not None and not os.path.isabs(cwd):
+            raise ValueError("cwd must be an absolute path when provided")
+
+        with self._lock.acquire():
+            blobs = self._read_blobs()
+            for i, blob in enumerate(blobs):
+                if blob["alias"] == alias:
+                    entry = self._decrypt(blob)
+                    command = {"argv": list(argv), "cwd": cwd}
+                    if command not in entry.allowed_commands:
+                        entry.allowed_commands.append(command)
+                    blobs[i] = self._encrypt(entry)
+                    self._write_blobs(blobs)
+                    return len(entry.allowed_commands)
+            raise KeyError(f"No credential found with alias '{alias}'")
+
     def rekey(self, new_master_key: bytes) -> int:
         """
         Re-encrypt all credentials with a new master key.
@@ -226,14 +269,59 @@ class EncryptedStore:
 
         return len(entries)
 
+    def migrate_aad(self) -> int:
+        """Re-encrypt every entry with the current full-metadata AAD.
+
+        Upgrades legacy entries (alias-only AAD or no AAD) so their
+        plaintext metadata fields become integrity-protected (RR-H6).
+        Atomic: if any entry fails to decrypt, nothing is written.
+
+        Returns:
+            Number of credentials re-encrypted.
+        """
+        with self._lock.acquire():
+            blobs = self._read_blobs()
+            entries = [self._decrypt(blob) for blob in blobs]
+            new_blobs = [self._encrypt(entry) for entry in entries]
+            self._write_blobs(new_blobs)
+        return len(entries)
+
     # -- encryption primitives -----------------------------------------------
+
+    @staticmethod
+    def _metadata_aad(
+        alias: str,
+        auth_type: str,
+        description: str,
+        created_at: float,
+        rotated_at: float,
+        expires_at: float | None,
+    ) -> bytes:
+        """Canonical AAD covering all plaintext metadata fields (RR-H6).
+
+        Binding these fields into the GCM authentication tag means an
+        attacker with file write access cannot alter them (e.g., null out
+        expires_at to disable expiry) without breaking decryption.
+        """
+        return json.dumps(
+            {
+                "alias": alias,
+                "auth_type": auth_type,
+                "description": description,
+                "created_at": created_at,
+                "rotated_at": rotated_at,
+                "expires_at": expires_at,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
 
     def _encrypt(self, entry: CredentialEntry) -> dict:
         """Encrypt a CredentialEntry into an EncryptedBlob dict.
 
-        Uses the credential alias as Associated Authenticated Data (AAD)
-        so that ciphertext cannot be swapped between credential entries
-        without detection.
+        All plaintext metadata fields are bound into the GCM tag as
+        Associated Authenticated Data (AAD), so neither cross-entry
+        ciphertext swaps nor metadata edits go undetected.
         """
         plaintext = json.dumps(
             {
@@ -241,11 +329,19 @@ class EncryptedStore:
                 "secret": entry.secret,
                 "allowed_urls": entry.allowed_urls,
                 "allowed_methods": entry.allowed_methods,
+                "allowed_commands": entry.allowed_commands,
             }
         ).encode("utf-8")
 
         nonce = os.urandom(12)  # 96-bit nonce, unique per entry
-        aad = entry.alias.encode("utf-8")
+        aad = self._metadata_aad(
+            entry.alias,
+            entry.auth_type,
+            entry.description,
+            entry.created_at,
+            entry.rotated_at,
+            entry.expires_at,
+        )
         ciphertext = self._gcm.encrypt(nonce, plaintext, aad)
 
         return {
@@ -257,25 +353,49 @@ class EncryptedStore:
             "created_at": entry.created_at,
             "rotated_at": entry.rotated_at,
             "expires_at": entry.expires_at,
+            "aad_version": 3,  # informational; tampering it has no effect
         }
 
     def _decrypt(self, blob: dict) -> CredentialEntry:
         """Decrypt an EncryptedBlob dict into a CredentialEntry.
 
-        Tries AAD-based decryption first; falls back to legacy no-AAD
-        for entries encrypted before AAD was added.
+        Tries full-metadata AAD first (current format), then falls back to
+        alias-only AAD and finally no AAD for entries written by older
+        versions. The fallbacks only succeed for blobs genuinely encrypted
+        with the older constructions — a current blob with tampered
+        metadata fails all three and raises InvalidTag (fail closed).
+        Legacy successes emit a warning recommending migrate_aad().
 
         Uses SecureBuffer to zero the decrypted plaintext from memory
         as soon as the JSON fields have been extracted.
         """
         nonce = bytes.fromhex(blob["nonce"])
         ciphertext = bytes.fromhex(blob["ciphertext"])
-        aad = blob["alias"].encode("utf-8")
+        aad_full = self._metadata_aad(
+            blob["alias"],
+            blob["auth_type"],
+            blob["description"],
+            blob["created_at"],
+            blob["rotated_at"],
+            blob.get("expires_at"),
+        )
         try:
-            raw_plaintext = self._gcm.decrypt(nonce, ciphertext, aad)
+            raw_plaintext = self._gcm.decrypt(nonce, ciphertext, aad_full)
         except InvalidTag:
-            # Legacy entry encrypted without AAD — fall back
-            raw_plaintext = self._gcm.decrypt(nonce, ciphertext, None)
+            try:
+                # Legacy: alias-only AAD (store format v2)
+                raw_plaintext = self._gcm.decrypt(nonce, ciphertext, blob["alias"].encode("utf-8"))
+            except InvalidTag:
+                # Legacy: no AAD (store format v1). If this also fails,
+                # InvalidTag propagates — tampered entry or wrong key.
+                raw_plaintext = self._gcm.decrypt(nonce, ciphertext, None)
+            warnings.warn(
+                f"Credential '{blob['alias']}' uses a legacy AAD format; its "
+                "metadata (expires_at, auth_type, ...) is not integrity-"
+                "protected. Run migrate_aad() to upgrade.",
+                UserWarning,
+                stacklevel=3,
+            )
 
         # Wrap in SecureBuffer so we can zero the plaintext after parsing
         with SecureBuffer(raw_plaintext) as buf:
@@ -294,6 +414,7 @@ class EncryptedStore:
             secret=secret_data["secret"],
             allowed_urls=secret_data["allowed_urls"],
             allowed_methods=secret_data["allowed_methods"],
+            allowed_commands=secret_data.get("allowed_commands", []),
             description=blob["description"],
             created_at=blob["created_at"],
             rotated_at=blob["rotated_at"],
