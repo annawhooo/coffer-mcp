@@ -32,11 +32,14 @@ def runner(monkeypatch, store, audit):
 
 
 @pytest.fixture
-def cred(store):
+def cred(store, tmp_path):
+    # cwd must be a genuinely absolute path on the host platform: Python
+    # 3.13 changed ntpath.isabs() so "/tmp" is no longer absolute on
+    # Windows. tmp_path is absolute everywhere.
     store.add(
         CredentialEntry(alias="c1", auth_type="web_login", username="u", secret="s3cret-value")
     )
-    store.add_allowed_command("c1", [PYTHON, "a.py"], cwd="/tmp")
+    store.add_allowed_command("c1", [PYTHON, "a.py"], cwd=str(tmp_path))
     store.add_allowed_command("c1", [PYTHON, "b.py", "--flag"])
     return "c1"
 
@@ -66,7 +69,7 @@ class TestRemoveAllowedCommand:
         assert check_command_allowed(entry, [PYTHON, "a.py"]) is None
 
     def test_remove_matches_argv_regardless_of_cwd(self, store, cred):
-        """a.py was added with cwd=/tmp; revoking by argv alone must work."""
+        """a.py was added with a cwd set; revoking by argv alone must work."""
         assert store.remove_allowed_command("c1", argv=[PYTHON, "a.py"]) == 1
 
     def test_remove_nonmatching_is_noop(self, store, cred):
