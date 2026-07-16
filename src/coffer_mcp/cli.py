@@ -11,6 +11,8 @@ Usage:
     coffer audit         View audit log and verify integrity
     coffer migrate       Upgrade entries to the integrity-protected format
     coffer allow-command ALIAS  Allow coffer_exec to run a command with this credential
+    coffer list-commands ALIAS  Show that credential's coffer_exec allowlist
+    coffer deny-command ALIAS   Revoke coffer_exec permission for a command
     coffer export PATH   Export all credentials to an encrypted backup file
     coffer import PATH    Import credentials from an encrypted backup file
     coffer rekey         Re-encrypt the vault with a new master passphrase
@@ -590,6 +592,86 @@ def allow_command(alias, argv_json, cwd):
     click.echo(f"Command allowed for '{alias}' ({count} command(s) on allowlist).")
     click.echo("Note: the credential is passed to this command via the environment")
     click.echo("variables COFFER_USERNAME and COFFER_SECRET.")
+
+
+@main.command(name="list-commands")
+@click.argument("alias")
+def list_commands(alias):
+    """Show the commands coffer_exec may run with this credential."""
+    store = _get_store()
+    try:
+        commands = store.list_allowed_commands(alias)
+    except KeyError:
+        click.echo(f"No credential found with alias '{alias}'.", err=True)
+        sys.exit(1)
+
+    if not commands:
+        click.echo(f"'{alias}' has no allowed commands — coffer_exec will refuse all commands.")
+        return
+
+    import json as _json
+
+    click.echo(f"\ncoffer_exec allowlist for '{alias}' ({len(commands)} command(s)):\n")
+    for c in commands:
+        click.echo(f"  argv: {_json.dumps(c.get('argv'))}")
+        click.echo(f"  cwd:  {c.get('cwd') or '(inherited)'}\n")
+
+
+@main.command(name="deny-command")
+@click.argument("alias")
+@click.option(
+    "--argv-json",
+    default=None,
+    help="Exact command to revoke, as a JSON array (matched by exact argv equality).",
+)
+@click.option("--all", "all_", is_flag=True, help="Revoke every command for this credential.")
+def deny_command(alias, argv_json, all_):
+    """Revoke coffer_exec permission for a command.
+
+    The counterpart to allow-command. Use --argv-json to revoke one
+    command (see 'coffer list-commands ALIAS' for the exact argv), or
+    --all to revoke every command for this credential.
+    """
+    import json as _json
+
+    if not all_ and not argv_json:
+        click.echo(
+            "Error: pass --argv-json to revoke one command, or --all for every command.", err=True
+        )
+        sys.exit(1)
+
+    argv = None
+    if argv_json:
+        try:
+            argv = _json.loads(argv_json)
+        except _json.JSONDecodeError as e:
+            click.echo(f"Error: --argv-json is not valid JSON: {e}", err=True)
+            sys.exit(1)
+
+    store = _get_store()
+    audit = _get_audit()
+
+    try:
+        removed = store.remove_allowed_command(alias, argv=argv, all=all_)
+    except KeyError:
+        click.echo(f"No credential found with alias '{alias}'.", err=True)
+        sys.exit(1)
+    except ValueError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+    if not removed:
+        click.echo(f"No matching command on the allowlist for '{alias}' — nothing changed.")
+        click.echo(f"See the exact entries with: coffer list-commands {alias}")
+        return
+
+    audit.log(
+        "credential.command_denied",
+        alias,
+        "success",
+        {"argv": argv, "all": all_, "removed": removed},
+    )
+    click.echo(f"Revoked {removed} command(s) for '{alias}'.")
 
 
 @main.command(name="export")
