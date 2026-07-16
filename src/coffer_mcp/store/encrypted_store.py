@@ -228,6 +228,56 @@ class EncryptedStore:
                     return len(entry.allowed_commands)
             raise KeyError(f"No credential found with alias '{alias}'")
 
+    def list_allowed_commands(self, alias: str) -> list[dict]:
+        """Return a credential's coffer_exec allowlist.
+
+        Raises:
+            KeyError: If the alias doesn't exist.
+        """
+        return list(self.get(alias).allowed_commands)
+
+    def remove_allowed_command(self, alias: str, argv: list[str] | None = None, all: bool = False):
+        """Revoke coffer_exec permission for a command (or all commands).
+
+        The counterpart to add_allowed_command: a grant that cannot be
+        withdrawn is not a usable permission model.
+
+        Args:
+            alias: The credential to modify.
+            argv: Exact argument vector to revoke. Matched the same way
+                check_command_allowed matches: exact argv equality,
+                regardless of the entry's cwd.
+            all: Revoke every command for this credential.
+
+        Returns:
+            The number of allowlist entries removed.
+
+        Raises:
+            KeyError: If the alias doesn't exist.
+            ValueError: If neither argv nor all is given.
+        """
+        if not all and not argv:
+            raise ValueError("Pass argv to revoke one command, or all=True to revoke every command")
+
+        with self._lock.acquire():
+            blobs = self._read_blobs()
+            for i, blob in enumerate(blobs):
+                if blob["alias"] == alias:
+                    entry = self._decrypt(blob)
+                    before = len(entry.allowed_commands)
+                    if all:
+                        entry.allowed_commands = []
+                    else:
+                        entry.allowed_commands = [
+                            c for c in entry.allowed_commands if c.get("argv") != list(argv)
+                        ]
+                    removed = before - len(entry.allowed_commands)
+                    if removed:
+                        blobs[i] = self._encrypt(entry)
+                        self._write_blobs(blobs)
+                    return removed
+            raise KeyError(f"No credential found with alias '{alias}'")
+
     def rekey(self, new_master_key: bytes) -> int:
         """
         Re-encrypt all credentials with a new master key.
