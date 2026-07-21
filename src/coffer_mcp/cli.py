@@ -11,6 +11,7 @@ Usage:
     coffer audit         View audit log and verify integrity
     coffer migrate       Upgrade entries to the integrity-protected format
     coffer allow-command ALIAS  Allow coffer_exec to run a command with this credential
+    coffer exec ALIAS    Run an allowlisted command with the credential in its environment
     coffer export PATH   Export all credentials to an encrypted backup file
     coffer import PATH    Import credentials from an encrypted backup file
     coffer rekey         Re-encrypt the vault with a new master passphrase
@@ -590,6 +591,71 @@ def allow_command(alias, argv_json, cwd):
     click.echo(f"Command allowed for '{alias}' ({count} command(s) on allowlist).")
     click.echo("Note: the credential is passed to this command via the environment")
     click.echo("variables COFFER_USERNAME and COFFER_SECRET.")
+
+
+@main.command(name="exec")
+@click.argument("alias")
+@click.option(
+    "--argv-json",
+    required=True,
+    help="Exact command to run, as a JSON array. Must match an entry added with allow-command.",
+)
+@click.option("--timeout", "timeout_s", default=300, help="Wall-clock timeout in seconds.")
+@click.option("--reason", default="", help="Why this is running (recorded in the audit log).")
+@click.option("--quiet", is_flag=True, help="Suppress the child's output; exit code only.")
+def exec_cmd(alias, argv_json, timeout_s, reason, quiet):
+    """Run an allowlisted command with a credential in its environment.
+
+    The CLI counterpart to the coffer_exec MCP tool, for unattended use
+    (cron, Task Scheduler) where no MCP session exists. Same guarantees:
+    exact-argv allowlist match, credential passed only via the child's
+    COFFER_USERNAME / COFFER_SECRET environment variables, output
+    scrubbed of the secret, every invocation audited.
+
+    Exits with the child's exit code, so scheduled jobs can branch on it.
+
+    \b
+    Example:
+      coffer exec my-site --argv-json '["C:/Python311/python.exe", "scrape.py"]' \\
+        --reason "nightly refresh"
+    """
+    import asyncio
+    import json as _json
+
+    from coffer_mcp.tools.vault_exec import vault_exec
+
+    try:
+        argv = _json.loads(argv_json)
+    except _json.JSONDecodeError as e:
+        click.echo(f"Error: --argv-json is not valid JSON: {e}", err=True)
+        sys.exit(2)
+
+    result = asyncio.run(
+        vault_exec(
+            store=_get_store(),
+            audit=_get_audit(),
+            alias=alias,
+            argv=argv,
+            timeout_s=timeout_s,
+            reason=reason,
+        )
+    )
+
+    if result.get("status") == "error":
+        click.echo(f"Error [{result.get('code')}]: {result.get('message')}", err=True)
+        if result.get("stderr"):
+            click.echo(result["stderr"], err=True)
+        # 2 = coffer refused or the command failed to run to completion;
+        # distinct from any exit code the child itself could return.
+        sys.exit(2)
+
+    if not quiet:
+        if result.get("stdout"):
+            click.echo(result["stdout"], nl=False)
+        if result.get("stderr"):
+            click.echo(result["stderr"], nl=False, err=True)
+
+    sys.exit(result.get("exit_code", 0))
 
 
 @main.command(name="export")
